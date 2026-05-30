@@ -1,0 +1,6 @@
+{
+  "name": "Mobile Optimiser",
+  "description": "Android Mobile Optimiser tool to clean junk, manage battery, monitor hardware, with an integrated agentic AI chat controller.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
