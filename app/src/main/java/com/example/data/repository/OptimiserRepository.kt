@@ -30,6 +30,51 @@ class OptimiserRepository(
     // Room Database access
     val allLogs: Flow<List<ActivityLog>> = dao.getAllLogs()
     val allSnapshots: Flow<List<BackupSnapshot>> = dao.getAllBackupSnapshots()
+    
+    // --- Agent Skills & Memory Streams ---
+    val allSkills: Flow<List<com.example.data.model.AgentSkill>> = dao.getAllSkills()
+    val allMemories: Flow<List<com.example.data.model.AgentMemory>> = dao.getAllMemories()
+
+    suspend fun insertSkill(name: String, description: String, level: Int, source: String, url: String) = withContext(Dispatchers.IO) {
+        val skill = com.example.data.model.AgentSkill(
+            name = name,
+            description = description,
+            level = level,
+            source = source,
+            url = url,
+            status = "ENABLED",
+            timestamp = System.currentTimeMillis(),
+            lastUpdated = System.currentTimeMillis()
+        )
+        dao.insertSkill(skill)
+    }
+
+    suspend fun updateSkillLevel(skill: com.example.data.model.AgentSkill, newLevel: Int) = withContext(Dispatchers.IO) {
+        val updated = skill.copy(level = newLevel, lastUpdated = System.currentTimeMillis())
+        dao.insertSkill(updated)
+    }
+
+    suspend fun deleteSkillById(id: Long) = withContext(Dispatchers.IO) {
+        dao.deleteSkillById(id)
+    }
+
+    suspend fun insertMemory(category: String, content: String, importance: Int = 5) = withContext(Dispatchers.IO) {
+        val memory = com.example.data.model.AgentMemory(
+            category = category,
+            content = content,
+            importance = importance,
+            timestamp = System.currentTimeMillis()
+        )
+        dao.insertMemory(memory)
+    }
+
+    suspend fun deleteMemoryById(id: Long) = withContext(Dispatchers.IO) {
+        dao.deleteMemoryById(id)
+    }
+
+    suspend fun clearAllMemories() = withContext(Dispatchers.IO) {
+        dao.clearAllMemories()
+    }
 
     fun getFilteredLogsFlow(startTime: Long, endTime: Long, type: String?): Flow<List<ActivityLog>> {
         return if (type == null || type == "ALL") {

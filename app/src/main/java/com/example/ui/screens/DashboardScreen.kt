@@ -142,6 +142,70 @@ fun DashboardScreen(
             }
         }
 
+        // AI Sentinel Shield Status Dashboard Widget
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp, 
+                        if (isHighContrast) Color.White else Color(0xFFE53935).copy(alpha = 0.3f), 
+                        RoundedCornerShape(16.dp)
+                    ),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isHighContrast) Color.Black else Color(0xFF1C1315)
+                ),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1.0f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "",
+                                tint = Color(0xFFE53935),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "SENTINEL IMMUNE DAEMON",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Actively shield Binder memory & inspect for broken dispatcher input channel leaks.",
+                            fontSize = 11.sp,
+                            color = Color.LightGray
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Button(
+                        onClick = { viewModel.setSentinelOpen(true) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE53935),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .height(36.dp)
+                            .testTag("dashboard_sentinel_btn")
+                    ) {
+                        Text("DIAGNOSE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
         // System Gauges Card (Storage, Memory, Temperature)
         item {
             Card(

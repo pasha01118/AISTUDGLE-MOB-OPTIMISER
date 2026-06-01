@@ -6,8 +6,10 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.data.model.ActivityLog
 import com.example.data.model.BackupSnapshot
+import com.example.data.model.AgentSkill
+import com.example.data.model.AgentMemory
 
-@Database(entities = [ActivityLog::class, BackupSnapshot::class], version = 1, exportSchema = false)
+@Database(entities = [ActivityLog::class, BackupSnapshot::class, AgentSkill::class, AgentMemory::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun activityLogDao(): ActivityLogDao
 

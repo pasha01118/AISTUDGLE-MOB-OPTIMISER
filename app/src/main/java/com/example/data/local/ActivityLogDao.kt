@@ -41,4 +41,27 @@ interface ActivityLogDao {
 
     @Delete
     suspend fun deleteBackupSnapshot(snapshot: BackupSnapshot)
+
+    // --- Agent Skills operations ---
+    @Query("SELECT * FROM agent_skills ORDER BY lastUpdated DESC")
+    fun getAllSkills(): Flow<List<com.example.data.model.AgentSkill>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSkill(skill: com.example.data.model.AgentSkill): Long
+
+    @Query("DELETE FROM agent_skills WHERE id = :id")
+    suspend fun deleteSkillById(id: Long)
+
+    // --- Agent Memories operations ---
+    @Query("SELECT * FROM agent_memories ORDER BY timestamp DESC")
+    fun getAllMemories(): Flow<List<com.example.data.model.AgentMemory>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertMemory(memory: com.example.data.model.AgentMemory): Long
+
+    @Query("DELETE FROM agent_memories WHERE id = :id")
+    suspend fun deleteMemoryById(id: Long)
+
+    @Query("DELETE FROM agent_memories")
+    suspend fun clearAllMemories()
 }
