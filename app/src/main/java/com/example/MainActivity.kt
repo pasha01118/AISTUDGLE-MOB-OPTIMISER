@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.draw.scale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.History
@@ -42,6 +44,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.History
@@ -227,42 +234,6 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-
-                        // Floating Action Button to launch AI powered Sentinel Self-Healing Core anywhere
-                        if (showSentinelFloatingButton && currentTab == ScreenTab.DASHBOARD) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(16.dp)
-                            ) {
-                                Button(
-                                    onClick = { viewModel.setSentinelOpen(true) },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isHighContrast) Color.Yellow else MaterialTheme.colorScheme.error,
-                                        contentColor = if (isHighContrast) Color.Black else Color.White
-                                    ),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .height(48.dp)
-                                        .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                        .testTag("sentinel_launcher_fab")
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.Shield,
-                                            contentDescription = "Sentinel Shield",
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "AI Sentinel",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -293,11 +264,13 @@ fun SentinelDiagnosticModal(viewModel: OptimiserViewModel) {
         "gpt-4o-mini"
     )
 
+    var activeSubTab by remember { mutableStateOf(0) } // 0 = Diagnostic Shell, 1 = Sentinel Chat
+
     Dialog(onDismissRequest = { viewModel.setSentinelOpen(false) }) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(580.dp),
+                .height(600.dp),
             shape = RoundedCornerShape(16.dp),
             color = if (isHighContrast) Color.Black else Color(0xFF0F0F14),
             border = androidx.compose.foundation.BorderStroke(
@@ -345,369 +318,615 @@ fun SentinelDiagnosticModal(viewModel: OptimiserViewModel) {
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = "Select Sentinel AI Brain Model:",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.LightGray
-                )
 
-                // Model Selector
+                // Sub-tabs row
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    models.forEach { model ->
-                        val isSelected = selectedModel == model
-                        Box(
-                            modifier = Modifier
-                                .weight(1.0f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (isSelected) Color(0xFFE53935).copy(alpha = 0.2f)
-                                    else Color(0xFF16161F)
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isSelected) Color(0xFFE53935) else Color.White.copy(alpha = 0.1f),
-                                    RoundedCornerShape(6.dp)
-                                )
-                                .clickable { viewModel.setSentinelSelectedModel(model) }
-                                .padding(vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (activeSubTab == 0) Color(0xFFE53935).copy(alpha = 0.15f) else Color.Transparent)
+                            .border(1.dp, if (activeSubTab == 0) Color(0xFFE53935) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .clickable { activeSubTab = 0 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = if (activeSubTab == 0) Color(0xFFE53935) else Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = model.replace("-", " ").replace("gemini", "gem"),
-                                fontSize = 9.sp,
-                                color = if (isSelected) Color.White else Color.Gray,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                textAlign = TextAlign.Center
+                                "Diagnostics",
+                                fontSize = 11.sp,
+                                color = if (activeSubTab == 0) Color.White else Color.Gray,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (activeSubTab == 1) Color(0xFF2E7D32).copy(alpha = 0.15f) else Color.Transparent)
+                            .border(1.dp, if (activeSubTab == 1) Color(0xFF81C784) else Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .clickable { activeSubTab = 1 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Chat,
+                                contentDescription = null,
+                                tint = if (activeSubTab == 1) Color(0xFF81C784) else Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "Sentinel Chat",
+                                fontSize = 11.sp,
+                                color = if (activeSubTab == 1) Color.White else Color.Gray,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = "Select Log Target to Diagnose/Fix:",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.LightGray
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                val currentTargetError by viewModel.sentinelSelectedError.collectAsState()
-                val preloadedErrors = listOf(
-                    "channel 'db18ee0' (Latest)" to "06-01 04:46:40.379 677 E/InputDispatcher: channel 'db18ee0 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '69ef4ce'" to "06-01 03:58:20.126 679 E/InputDispatcher: channel '69ef4ce com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '1a1acd1'" to "06-01 03:57:59.211 679 E/InputDispatcher: channel '1a1acd1 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '7c54713'" to "06-01 03:57:59.211 679 E/InputDispatcher: channel '7c54713 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '38709bf'" to "05-31 20:04:03.661 679 E/InputDispatcher: channel '38709bf com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'd8d6539'" to "05-31 20:03:40.453 679 E/InputDispatcher: channel 'd8d6539 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'e50633d'" to "05-31 20:00:32.749 679 E/InputDispatcher: channel 'e50633d com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'c7a8388'" to "05-31 19:02:49.197 677 E/InputDispatcher: channel 'c7a8388 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'e86b5a9'" to "05-31 19:00:41.017 677 E/InputDispatcher: channel 'e86b5a9 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '1a448bf'" to "05-31 19:01:03.778 677 E/InputDispatcher: channel '1a448bf com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'fe154a7'" to "05-31 18:58:36.290 677 E/InputDispatcher: channel 'fe154a7 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '1af9d87'" to "05-31 18:58:57.599 677 E/InputDispatcher: channel '1af9d87 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'dc3874'" to "05-31 18:56:48.073 677 E/InputDispatcher: channel 'dc3874 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '97430f'" to "05-31 18:56:48.073 677 E/InputDispatcher: channel '97430f com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '59c64b'" to "05-31 18:53:32.838 677 E/InputDispatcher: channel '59c64b com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '7e1dcfb'" to "05-31 18:26:55.501 677 E/InputDispatcher: channel '7e1dcfb com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '670eb96'" to "05-31 16:15:54.257 679 E/InputDispatcher: channel '670eb96 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '5324fd8'" to "05-31 16:15:54.257 679 E/InputDispatcher: channel '5324fd8 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "App is not responding" to "05-31 16:12:20.123 679 E/ActivityManager: ANR in com.aistudio.mobileoptimiser.qywxkz (com.example.MainActivity) - Reason: Input dispatching timed out (Waiting to send key or touch event) - App is not responding.",
-                    "channel '132ce95'" to "05-31 16:01:06.743 679 E/InputDispatcher: channel '132ce95 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "KSP AWT NPE" to "Exception in thread \"AWT-EventQueue-0\" java.lang.NullPointerException: Cannot invoke \"ksp.com.intellij.openapi.application.Application.getService(java.lang.Class)\" because the return value of \"ksp.com.intellij.openapi.application.ApplicationManager.getApplication()\" is null",
-                    "channel '7f28445'" to "05-31 15:57:07.738 679 E/InputDispatcher: channel '7f28445 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'e1c51b'" to "05-31 15:57:07.743 679 E/InputDispatcher: channel 'e1c51b com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '60dcbbd'" to "05-31 15:57:45.857 679 E/InputDispatcher: channel '60dcbbd com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel 'a091fd4'" to "05-31 15:27:00.272 679 E/InputDispatcher: channel 'a091fd4 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
-                    "channel '8824a02'" to "05-30 03:05:46.345 679 E/InputDispatcher: channel '8824a02 com.aistudio.mobileoptimiser' ~ Channel is unrecoverably broken!",
-                    "channel '1f06110'" to "05-30 03:06:10.596 679 E/InputDispatcher: channel '1f06110 com.aistudio.mobileoptimiser' ~ Channel is unrecoverably broken!",
-                    "channel 'c8785f7'" to "05-30 03:00:23.112 679 E/InputDispatcher: channel 'c8785f7 com.aistudio.mobileoptimiser' ~ Channel is unrecoverably broken!",
-                    "channel '3cb6aae'" to "05-30 03:00:40.276 679 E/InputDispatcher: channel '3cb6aae com.aistudio.mobileoptimiser' ~ Channel is unrecoverably broken!",
-                    "NullPointer" to "05-30 03:15:10.820 421 E/AndroidRuntime: FATAL EXCEPTION: NullPointerException at Compose.Measure"
-                )
-                
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(preloadedErrors) { itemPair ->
-                        val label = itemPair.first
-                        val errString = itemPair.second
-                        val isTargetSelected = currentTargetError == errString
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (isTargetSelected) Color(0xFFFFB300).copy(alpha = 0.2f)
-                                    else Color(0xFF16161F)
-                                )
-                                .border(
-                                    1.dp,
-                                    if (isTargetSelected) Color(0xFFFFB300) else Color.White.copy(alpha = 0.1f),
-                                    RoundedCornerShape(6.dp)
-                                )
-                                .clickable { viewModel.setSentinelSelectedError(errString) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 9.sp,
-                                color = if (isTargetSelected) Color.White else Color.Gray,
-                                fontWeight = if (isTargetSelected) FontWeight.Bold else FontWeight.Normal,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                if (activeSubTab == 0) {
+                    // --- SUB-TAB 0: DIAGNOSTICS & HARD SELF-HEALING ---
+                    val isAutoModel by viewModel.isSentinelAutoModel.collectAsState()
 
-                OutlinedTextField(
-                    value = currentTargetError,
-                    onValueChange = { viewModel.setSentinelSelectedError(it) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .testTag("sentinel_custom_error_input"),
-                    textStyle = TextStyle(
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    label = { Text("Inspect/Paste Custom Log Trace", fontSize = 9.sp, color = Color.Gray) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFFE53935),
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                        focusedContainerColor = Color(0xFF16161F),
-                        unfocusedContainerColor = Color(0xFF16161F)
-                    ),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Diagnostic Console Screen
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1.0f),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF07070A)),
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "REAL-TIME DIAGNOSTIC SHIELD SHELL",
-                                fontSize = 8.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFE53935)
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(
-                                        when (status) {
-                                            "SCANNING" -> Color.Yellow
-                                            "HEALING" -> Color.Cyan
-                                            "RESOLVED" -> Color.Green
-                                            "FAILED" -> Color(0xFFE53935)
-                                            else -> Color.Gray
-                                        },
-                                        RoundedCornerShape(3.dp)
-                                    )
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // Progress indicator
-                        if (status == "SCANNING" || status == "HEALING") {
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(2.dp),
-                                color = if (status == "SCANNING") Color.Yellow else Color.Cyan,
-                                trackColor = Color.DarkGray
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
-
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(logs) { log ->
-                                Text(
-                                    text = log,
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = if (log.contains("CRITICAL") || log.contains("Error") || log.contains("failed")) Color(0xFFFF8A80)
-                                            else if (log.contains("SUCCESSFULLY") || log.contains("SYSTEM")) Color(0xFFB9F6CA)
-                                            else Color.LightGray
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Sentinel Detected Issues List
-                if (detections.isNotEmpty() && status != "RESOLVED") {
-                    Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Text(
-                            text = "DETECTED SYSTEM FAULTS:",
-                            fontSize = 10.sp,
+                            text = "Sentinel AI Brain Model Source:",
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFF8A80)
+                            color = Color.LightGray
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        detections.forEach { fault ->
-                            Row(modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 2.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = if (isAutoModel) "Auto-Route [ON]" else "Manual Mode",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isAutoModel) Color(0xFF00FFCC) else Color.Gray
+                            )
+                            Switch(
+                                checked = isAutoModel,
+                                onCheckedChange = { viewModel.setSentinelAutoModel(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color(0xFF00FFCC),
+                                    checkedTrackColor = Color(0xFF00FFCC).copy(alpha = 0.3f),
+                                    uncheckedThumbColor = Color.Gray,
+                                    uncheckedTrackColor = Color.DarkGray
+                                ),
+                                modifier = Modifier.scale(0.7f).height(24.dp)
+                            )
+                        }
+                    }
+
+                    if (isAutoModel) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF16161F).copy(alpha = 0.5f)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00FFCC).copy(alpha = 0.3f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.BugReport,
-                                    contentDescription = "",
-                                    tint = Color(0xFFFF8A80),
-                                    modifier = Modifier.size(12.dp)
+                                    imageVector = Icons.Default.Psychology,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00FFCC),
+                                    modifier = Modifier.size(16.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = fault,
+                                    text = "Optima Agent routed brain spec: $selectedModel",
                                     fontSize = 10.sp,
-                                    color = Color.LightGray
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
+                    } else {
+                        // Model Selector Array
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            models.forEach { model ->
+                                val isSelected = selectedModel == model
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1.0f)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            if (isSelected) Color(0xFFE53935).copy(alpha = 0.2f)
+                                            else Color(0xFF16161F)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) Color(0xFFE53935) else Color.White.copy(alpha = 0.1f),
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .clickable { viewModel.setSentinelSelectedModel(model) }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = model.replace("-", " ").replace("gemini", "gem"),
+                                        fontSize = 9.sp,
+                                        color = if (isSelected) Color.White else Color.Gray,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
                     }
-                }
 
-                // If FAILED -> Prompt the User for External Code Help Box
-                if (status == "FAILED" && externalPromptHelp.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "SOLVER BLOCKED. COPY EXTERNAL PROMPT:",
-                        fontSize = 10.sp,
+                        text = "Select Log Target to Diagnose/Fix:",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.Yellow
+                        color = Color.LightGray
                     )
                     Spacer(modifier = Modifier.height(4.dp))
+
+                    val currentTargetError by viewModel.sentinelSelectedError.collectAsState()
+                    val preloadedErrors = listOf(
+                        "channel 'db18ee0' (Latest)" to "06-01 04:46:40.379 677 E/InputDispatcher: channel 'db18ee0 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
+                        "channel '69ef4ce'" to "06-01 03:58:20.126 679 E/InputDispatcher: channel '69ef4ce com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
+                        "channel '1a1acd1'" to "06-01 03:57:59.211 679 E/InputDispatcher: channel '1a1acd1 com.aistudio.mobileoptimiser.qywxkz/com.example.MainActivity' ~ Channel is unrecoverably broken and will be disposed!",
+                        "App is not responding" to "05-31 16:12:20.123 679 E/ActivityManager: ANR in com.aistudio.mobileoptimiser.qywxkz (com.example.MainActivity) - Reason: Input dispatching timed out (Waiting to send key or touch event) - App is not responding.",
+                        "KSP AWT NPE" to "Exception in thread \"AWT-EventQueue-0\" java.lang.NullPointerException: Cannot invoke \"ksp.com.intellij.openapi.application.Application.getService(java.lang.Class)\" because the return value of \"ksp.com.intellij.openapi.application.ApplicationManager.getApplication()\" is null",
+                        "NullPointer" to "05-30 03:15:10.820 421 E/AndroidRuntime: FATAL EXCEPTION: NullPointerException at Compose.Measure"
+                    )
+
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(preloadedErrors) { itemPair ->
+                            val label = itemPair.first
+                            val errString = itemPair.second
+                            val isTargetSelected = currentTargetError == errString
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(
+                                        if (isTargetSelected) Color(0xFFFFB300).copy(alpha = 0.2f)
+                                        else Color(0xFF16161F)
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isTargetSelected) Color(0xFFFFB300) else Color.White.copy(alpha = 0.1f),
+                                        RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable { viewModel.setSentinelSelectedError(errString) }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 9.sp,
+                                    color = if (isTargetSelected) Color.White else Color.Gray,
+                                    fontWeight = if (isTargetSelected) FontWeight.Bold else FontWeight.Normal,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    OutlinedTextField(
+                        value = currentTargetError,
+                        onValueChange = { viewModel.setSentinelSelectedError(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("sentinel_custom_error_input"),
+                        textStyle = TextStyle(
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
+                        ),
+                        label = { Text("Inspect/Paste Custom Log Trace", fontSize = 9.sp, color = Color.Gray) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFE53935),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                            focusedContainerColor = Color(0xFF16161F),
+                            unfocusedContainerColor = Color(0xFF16161F)
+                        ),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Diagnostic Console Screen
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(130.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF16161F)),
-                        shape = RoundedCornerShape(6.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Yellow.copy(alpha = 0.2f))
+                            .weight(1.0f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF07070A)),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
                     ) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(8.dp)
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                item {
+                                Text(
+                                    text = "REAL-TIME DIAGNOSTIC SHIELD SHELL",
+                                    fontSize = 8.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFE53935)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(
+                                            when (status) {
+                                                "SCANNING" -> Color.Yellow
+                                                "HEALING" -> Color.Cyan
+                                                "RESOLVED" -> Color.Green
+                                                "FAILED" -> Color(0xFFE53935)
+                                                else -> Color.Gray
+                                            },
+                                            RoundedCornerShape(3.dp)
+                                        )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Progress indicator
+                            if (status == "SCANNING" || status == "HEALING") {
+                                LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(2.dp),
+                                    color = if (status == "SCANNING") Color.Yellow else Color.Cyan,
+                                    trackColor = Color.DarkGray
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(logs) { log ->
                                     Text(
-                                        text = externalPromptHelp,
-                                        fontSize = 9.sp,
+                                        text = log,
+                                        fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
+                                        color = if (log.contains("CRITICAL") || log.contains("Error") || log.contains("failed")) Color(0xFFFF8A80)
+                                                else if (log.contains("SUCCESSFULLY") || log.contains("SYSTEM")) Color(0xFFB9F6CA)
+                                                else Color.LightGray
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Sentinel Detected Issues List
+                    if (detections.isNotEmpty() && status != "RESOLVED") {
+                        Column {
+                            Text(
+                                text = "DETECTED SYSTEM FAULTS:",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFF8A80)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            detections.take(2).forEach { fault ->
+                                Row(modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 2.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Default.BugReport,
+                                        contentDescription = "",
+                                        tint = Color(0xFFFF8A80),
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = fault,
+                                        fontSize = 10.sp,
                                         color = Color.LightGray
                                     )
                                 }
                             }
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
 
-                            IconButton(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(externalPromptHelp))
-                                    Toast.makeText(context, "Troubleshooting Copied!", Toast.LENGTH_SHORT).show()
-                                },
+                    // If FAILED -> Prompt the User for External Code Help Box
+                    if (status == "FAILED" && externalPromptHelp.isNotEmpty()) {
+                        Text(
+                            text = "SOLVER BLOCKED. COPY EXTERNAL PROMPT:",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Yellow
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(100.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF16161F)),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.Yellow.copy(alpha = 0.2f))
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(8.dp)
+                                ) {
+                                    item {
+                                        Text(
+                                            text = externalPromptHelp,
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color.LightGray
+                                        )
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(externalPromptHelp))
+                                        Toast.makeText(context, "Troubleshooting Copied!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(4.dp)
+                                        .size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy Prompt",
+                                        tint = Color.Yellow,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
+                    // Buttons Panel
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (status == "IDLE" || status == "RESOLVED" || status == "FAILED") {
+                            Button(
+                                onClick = { viewModel.resetSentinel() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                                shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(28.dp)
+                                    .weight(1.0f)
+                                    .height(40.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "Copy Prompt",
-                                    tint = Color.Yellow,
-                                    modifier = Modifier.size(16.dp)
+                                Icon(Icons.Default.Refresh, contentDescription = "", modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Reset", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+
+                            Button(
+                                onClick = { viewModel.runSentinelDiagnostic(forceFail = false) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .height(40.dp)
+                                    .testTag("run_sentinel_heal_success")
+                            ) {
+                                Text("Self-Heal", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+
+                            Button(
+                                onClick = { viewModel.runSentinelDiagnostic(forceFail = true) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .weight(1.2f)
+                                    .height(40.dp)
+                                    .testTag("run_sentinel_heal_fail")
+                            ) {
+                                Text("Sandbox Fail", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(40.dp)
+                                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Sentinel AI solver calculating heap trees...",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
+                } else {
+                    // --- SUB-TAB 1: HEALTH INTERACTIVE CHAT UI ---
+                    val chatMessages by viewModel.sentinelChatMessages.collectAsState()
+                    val chatInput by viewModel.sentinelChatInput.collectAsState()
+                    val pendingPermission by viewModel.sentinelPendingPermissionAction.collectAsState()
 
-                // Buttons Panel
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    if (status == "IDLE" || status == "RESOLVED" || status == "FAILED") {
-                        Button(
-                            onClick = { viewModel.resetSentinel() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray),
+                    Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF07070A)),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(1.0f)
-                                .height(40.dp)
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "", modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Reset", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize().padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(chatMessages) { msg ->
+                                    val isAssistant = msg.sender == "assistant"
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = if (isAssistant) Alignment.Start else Alignment.End
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(
+                                                    RoundedCornerShape(
+                                                        topStart = 10.dp,
+                                                        topEnd = 10.dp,
+                                                        bottomStart = if (isAssistant) 0.dp else 10.dp,
+                                                        bottomEnd = if (isAssistant) 10.dp else 0.dp
+                                                    )
+                                                )
+                                                .background(
+                                                    if (isAssistant) Color(0xFF1E2130)
+                                                    else Color(0xFF2E7D32).copy(alpha = 0.4f)
+                                                )
+                                                .border(
+                                                    1.dp,
+                                                    if (isAssistant) Color.White.copy(alpha = 0.1f)
+                                                    else Color(0xFF2E7D32).copy(alpha = 0.8f),
+                                                    RoundedCornerShape(
+                                                        topStart = 10.dp,
+                                                        topEnd = 10.dp,
+                                                        bottomStart = if (isAssistant) 0.dp else 10.dp,
+                                                        bottomEnd = if (isAssistant) 10.dp else 0.dp
+                                                    )
+                                                )
+                                                .padding(10.dp)
+                                        ) {
+                                            Text(
+                                                text = msg.text,
+                                                color = Color.White,
+                                                fontSize = 10.sp,
+                                                lineHeight = 14.sp,
+                                                fontFamily = if (msg.text.contains("REPORT") || msg.text.contains("====")) FontFamily.Monospace else FontFamily.SansSerif
+                                            )
+                                        }
+                                        Text(
+                                            text = if (isAssistant) "Sentinel Assistant" else "Administrator",
+                                            fontSize = 8.sp,
+                                            color = Color.Gray,
+                                            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
 
-                        // Diagnostic Options
-                        Button(
-                            onClick = { viewModel.runSentinelDiagnostic(forceFail = false) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(1.2f)
-                                .height(40.dp)
-                                .testTag("run_sentinel_heal_success")
-                        ) {
-                            Text("Self-Heal", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        // Pending Diagnostic Authorization Alert Banner!
+                        if (pendingPermission != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth().clickable { viewModel.executePendingDiagnosis() },
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE53935).copy(alpha = 0.15f)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE53935)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Run Protocol",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("EXECUTE DIAGNOSIS PROTOCOL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                        Text("Tap to authorize Sentinel self-healing pipeline", fontSize = 8.sp, color = Color.LightGray)
+                                    }
+                                    Button(
+                                        onClick = { viewModel.executePendingDiagnosis() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("Authorize", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
+                            }
                         }
 
-                        Button(
-                            onClick = { viewModel.runSentinelDiagnostic(forceFail = true) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(1.2f)
-                                .height(40.dp)
-                                .testTag("run_sentinel_heal_fail")
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Chat Input row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("Sandbox Fail", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        }
-                    } else {
-                        // Progress state - disables action
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp)
-                                .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Sentinel AI solver calculating heap trees...",
-                                color = Color.Gray,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                            OutlinedTextField(
+                                value = chatInput,
+                                onValueChange = { viewModel.setSentinelChatInput(it) },
+                                modifier = Modifier.weight(1f).height(46.dp),
+                                textStyle = TextStyle(color = Color.White, fontSize = 11.sp),
+                                placeholder = { Text("Ask about health, type 'Report'...", fontSize = 10.sp, color = Color.Gray) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFF2E7D32),
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                                    focusedContainerColor = Color(0xFF16161F),
+                                    unfocusedContainerColor = Color(0xFF16161F)
+                                ),
+                                singleLine = true
                             )
+
+                            IconButton(
+                                onClick = { 
+                                    if (chatInput.isNotBlank()) {
+                                        viewModel.sendSentinelChatMessage(chatInput)
+                                    }
+                                },
+                                modifier = Modifier.size(46.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF2E7D32))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Send,
+                                    contentDescription = "Send Message",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
                 }

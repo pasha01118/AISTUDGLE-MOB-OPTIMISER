@@ -39,6 +39,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -141,7 +142,11 @@ fun ChatScreen(
     // Auto scroll chat list down on new message payload
     LaunchedEffect(messages.size, isChatLoading) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            delay(150)
+            val total = listState.layoutInfo.totalItemsCount
+            if (total > 0) {
+                listState.animateScrollToItem(total - 1)
+            }
         }
     }
 
@@ -176,11 +181,20 @@ fun ChatScreen(
             .fillMaxSize()
             .background(activeBgColor)
     ) {
-        // --- 1. GMail Secure OAuth panel (Top Sticky) ---
-        Card(
+        LazyColumn(
+            state = listState,
             modifier = Modifier
+                .weight(1.0f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                // --- 1. GMail Secure OAuth panel (Top Sticky) ---
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
                 .border(1.dp, activeBorderColor, RoundedCornerShape(12.dp)),
             colors = CardDefaults.cardColors(containerColor = cardBg),
             shape = RoundedCornerShape(12.dp)
@@ -308,12 +322,14 @@ fun ChatScreen(
                 }
             }
         }
+    }
 
+    item {
         // --- 2. Perplexity Header: Active Model Dropdown & Switch Toggle ---
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
                 .border(1.dp, if (isHighContrast) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(12.dp)),
             colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(12.dp)
@@ -480,12 +496,14 @@ fun ChatScreen(
                 }
             }
         }
+    }
 
+    item {
         // --- JAMUN DEEP AGENTIC CYBERPUNK HUD ---
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
                 .border(2.dp, Color(0xFFFF3D00).copy(alpha = 0.8f), RoundedCornerShape(14.dp)),
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0E15)),
             shape = RoundedCornerShape(14.dp)
@@ -1004,12 +1022,14 @@ fun ChatScreen(
                 }
             }
         }
+    }
 
+    item {
         // --- 3. Collapsible Neural Learning Hub & Standalone Offline Small Model Controls ---
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
                 .border(1.dp, if (isHighContrast) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
             colors = CardDefaults.cardColors(containerColor = cardBg),
             shape = RoundedCornerShape(12.dp)
@@ -1109,17 +1129,10 @@ fun ChatScreen(
                 }
             }
         }
+    }
 
-        // --- 4. Scrollable chat messages pane ---
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1.0f)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(messages) { message ->
+    // --- 4. Scrollable chat messages pane ---
+        items(messages) { message ->
                 val isAI = message.sender == "assistant"
 
                 Row(
