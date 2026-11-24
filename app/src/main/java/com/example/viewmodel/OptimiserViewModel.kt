@@ -67,12 +67,46 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
     private val _batteryAlert = MutableStateFlow<String?>(null)
     val batteryAlert: StateFlow<String?> = _batteryAlert.asStateFlow()
 
+    // Junk threshold alerting states
+    private val _showJunkNotificationPrompt = MutableStateFlow(false)
+    val showJunkNotificationPrompt: StateFlow<Boolean> = _showJunkNotificationPrompt.asStateFlow()
+    private var _hasNotifiedJunkThreshold = false
+
+    fun dismissJunkPrompt() {
+        _showJunkNotificationPrompt.value = false
+    }
+
+    // Automated background junk file cleaning setting and simulated ram usage
+    private val _isAutoJunkCleanEnabled = MutableStateFlow(false) // initialized in init below
+    val isAutoJunkCleanEnabled: StateFlow<Boolean> = _isAutoJunkCleanEnabled.asStateFlow()
+
+    private val _ramUsagePercent = MutableStateFlow(52f)
+    val ramUsagePercent: StateFlow<Float> = _ramUsagePercent.asStateFlow()
+
+    fun toggleAutoJunkClean() {
+        val newValue = !_isAutoJunkCleanEnabled.value
+        _isAutoJunkCleanEnabled.value = newValue
+        prefs.edit().putBoolean("is_auto_junk_clean_enabled", newValue).apply()
+        
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "SYSTEM_SETTINGS",
+                description = "Automated RAM-triggered background clean is now ${if (newValue) "ENABLED" else "DISABLED"}",
+                detailsMap = mapOf("auto_clean_active" to newValue.toString(), "trigger_percent" to "80%")
+            )
+        }
+    }
+
     // Theme & Display preferences
     private val _isDarkTheme = MutableStateFlow(true)
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
 
     private val _isHighContrast = MutableStateFlow(false)
     val isHighContrast: StateFlow<Boolean> = _isHighContrast.asStateFlow()
+
+    // Battery Management Mode (High-Performance vs Power-Saving)
+    private val _isPowerSavingMode = MutableStateFlow(true)
+    val isPowerSavingMode: StateFlow<Boolean> = _isPowerSavingMode.asStateFlow()
 
     // --- GMail Authentication State (Google Identity simulation) ---
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
@@ -193,6 +227,7 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
     val isAuditing: StateFlow<Boolean> = _isAuditing.asStateFlow()
 
     init {
+        _isAutoJunkCleanEnabled.value = prefs.getBoolean("is_auto_junk_clean_enabled", false)
         viewModelScope.launch {
             _storageInfo.value = repository.getDeviceStorageInfo()
             _batteryInfo.value = repository.getBatteryInfo()
@@ -252,12 +287,80 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
                         temperatureCelsius = (baseTemp + tempVariance).coerceIn(minAllowed, maxAllowed)
                     )
 
+                    // Fluctuate memory usage
+                    val currentRam = _ramUsagePercent.value
+                    val ramChange = (-3..5).random()
+                    val newRam = (currentRam + ramChange).coerceIn(35f, 95f)
+                    _ramUsagePercent.value = newRam
+
+                    // If auto cleaning is enabled and RAM detects above 80%
+                    if (_isAutoJunkCleanEnabled.value && newRam >= 80f) {
+                        viewModelScope.launch {
+                            repository.insertLog(
+                                type = "AUTO_CLEAN",
+                                description = "Auto-Clean Triggered: RAM usage reached ${String.format(java.util.Locale.US, "%.1f", newRam)}% (>= 80% threshold). Cleared background cache directories.",
+                                detailsMap = mapOf("ram_usage" to String.format(java.util.Locale.US, "%.1f", newRam) + "%")
+                            )
+                            cleanJunkFiles()
+                            _ramUsagePercent.value = (35f + (0..10).random())
+                        }
+                    }
+
                     // Trigger warnings dynamically if thresholds crossed
                     evaluateAlerts()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
+        }
+    }
+
+    private fun triggerLocalNotification(junkSize: Long) {
+        val context = getApplication<android.app.Application>().applicationContext
+        val channelId = "junk_cleanup_channel"
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val name = "System Cleanliness Alerts"
+            val desc = "Alerts when junk caches or logs exceed storage thresholds"
+            val importance = android.app.NotificationManager.IMPORTANCE_HIGH
+            val channel = android.app.NotificationChannel(channelId, name, importance).apply {
+                description = desc
+            }
+            val manager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+        
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+            flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context,
+            0,
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        
+        val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.stat_notify_chat)
+            .setContentTitle("Excess Junk Cache Warning")
+            .setContentText("Found $junkSize MB of system trash cluttering directories. Clear now to restore IO speed.")
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
+            
+        try {
+            val notificationManager = androidx.core.app.NotificationManagerCompat.from(context)
+            if (android.os.Build.VERSION.SDK_INT < 33 || 
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, 
+                    "android.permission.POST_NOTIFICATIONS"
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationManager.notify(1002, builder.build())
+            }
+        } catch (e: SecurityException) {
+            e.printStackTrace()
         }
     }
 
@@ -290,6 +393,18 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
             }
         } else {
             _batteryAlert.value = null
+        }
+
+        val storage = _storageInfo.value
+        val threshold = 200 // MB
+        if (storage.junkMB > threshold) {
+            if (!_hasNotifiedJunkThreshold) {
+                _hasNotifiedJunkThreshold = true
+                _showJunkNotificationPrompt.value = true
+                triggerLocalNotification(storage.junkMB)
+            }
+        } else {
+            _hasNotifiedJunkThreshold = false
         }
     }
 
@@ -428,6 +543,25 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun clearRam(onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            _isScanning.value = true
+            _optimizerStatusMessage.value = "Scanning & clearing active background memory allocations..."
+            delay(1200)
+            val list = _backgroundApps.value.map { it.copy(isAsleep = true) }
+            _backgroundApps.value = list
+            _optimizerStatusMessage.value = "RAM Quick Cleared successfully: Released memory buffers of ${list.size} apps!"
+            _isScanning.value = false
+            
+            repository.insertLog(
+                type = "RAM_CLEAN",
+                description = "Manual RAM Quick Clean: Reclaimed system pages by putting ${list.size} apps to sleep",
+                detailsMap = mapOf("apps_slept_count" to list.size.toString())
+            )
+            onDone()
+        }
+    }
+
     fun scanSystem() {
         viewModelScope.launch {
             _isScanning.value = true
@@ -447,6 +581,8 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
             delay(1800)
             val currentJunk = _storageInfo.value.junkMB
             _storageInfo.value = _storageInfo.value.copy(junkMB = 0)
+            _showJunkNotificationPrompt.value = false
+            _hasNotifiedJunkThreshold = false
             _optimizerStatusMessage.value = "Successfully cleaned $currentJunk MB junk files!"
             _isCleaning.value = false
 
@@ -528,6 +664,24 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun toggleHighContrast() {
         _isHighContrast.value = !_isHighContrast.value
+    }
+
+    fun togglePowerSavingMode() {
+        val newValue = !_isPowerSavingMode.value
+        _isPowerSavingMode.value = newValue
+        if (newValue) {
+            _optimizerStatusMessage.value = "Power-Saving Mode Enabled: Throttle core clocks to conserve energy & secure silicon longevity."
+            _batteryInfo.value = _batteryInfo.value.copy(
+                health = "Eco Optimized",
+                percentage = _batteryInfo.value.percentage.coerceAtLeast(15)
+            )
+        } else {
+            _optimizerStatusMessage.value = "High-Performance Mode Enabled: 8 Cores unlocked. Max FPS enabled for intense workloads."
+            _batteryInfo.value = _batteryInfo.value.copy(
+                health = "High Capacity",
+                percentage = _batteryInfo.value.percentage.coerceAtLeast(20)
+            )
+        }
     }
 
     fun toggleSentinelFloatingButton() {
@@ -900,6 +1054,77 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun exportDiagnosticData(context: android.content.Context, onDone: (java.io.File?, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                // 1. Gather all statistics
+                val storage = _storageInfo.value
+                val battery = _batteryInfo.value
+                val ramPercent = _ramUsagePercent.value
+                val isPowerSave = _isPowerSavingMode.value
+                val logsList = activityLogs.value
+                
+                // 2. Format a comprehensive nested JSON Map
+                val metadata = mapOf(
+                    "export_timestamp" to System.currentTimeMillis(),
+                    "export_date" to java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()),
+                    "device" to "Nothing Phone A015",
+                    "diagnostics_version" to "v2.0"
+                )
+                
+                val hardware = mapOf(
+                    "cpu_temperature_celsius" to battery.temperatureCelsius,
+                    "ram_usage_percent" to ramPercent,
+                    "storage_total_mb" to storage.totalMB,
+                    "storage_used_mb" to storage.usedMB,
+                    "storage_junk_mb" to storage.junkMB,
+                    "battery_percentage" to battery.percentage,
+                    "battery_health" to battery.health,
+                    "power_saving_mode" to isPowerSave
+                )
+                
+                // Format logs list
+                val logsFormatted = logsList.map { log ->
+                    mapOf(
+                        "id" to log.id,
+                        "timestamp" to log.timestamp,
+                        "time_formatted" to java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp)),
+                        "activity_type" to log.activityType,
+                        "description" to log.description
+                    )
+                }
+                
+                val rootMap = mapOf(
+                    "metadata" to metadata,
+                    "hardware_monitoring_statistics" to hardware,
+                    "cleanup_history" to logsFormatted
+                )
+                
+                // Convert to beautifully formatted JSON string using Moshi
+                val type = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
+                val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+                val jsonString = moshi.adapter<Map<String, Any>>(type).indent("  ").toJson(rootMap) ?: "{}"
+                
+                // 3. Write to a file in standard external Downloads directory
+                val downloadsDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val file = java.io.File(downloadsDir, "optimiser_diagnostics_export.json")
+                file.writeText(jsonString)
+                
+                // Maintain log of this action
+                repository.insertLog(
+                    type = "DIAGNOSTICS_EXPORT",
+                    description = "Exported system diagnostics and ${logsFormatted.size} history logs to physical JSON file",
+                    detailsMap = mapOf("file_path" to file.absolutePath)
+                )
+                
+                onDone(file, jsonString)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onDone(null, "")
+            }
+        }
+    }
+
     fun clearLogs() {
         viewModelScope.launch {
             repository.clearLogs()
@@ -944,13 +1169,23 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
                 memoriesList.joinToString("\n") { "  - [Category: ${it.category}] ${it.content} (importance factor: ${it.importance}/10)" }
             }
 
-            // Build beautiful agent prompt context incorporating local memory rules
+            // Build beautiful agent prompt context incorporating local memory rules and real-time device metrics
             val systemRule = """
                 Your identity name is: $agentName.
                 Your persona: $personaRule
                 
                 USER COGNITIVE COUPLING PROFILE (Adapt your style, replies, and actions EXACTLY to these learned constraints & feedback):
                 $memoriesText
+                
+                REAL-TIME HARDWARE & SYSTEM HEALTH STATUS METRICS:
+                - Battery Percentage: ${_batteryInfo.value.percentage}%
+                - Battery Health / Mode Type: ${if (_isPowerSavingMode.value) "POWER-SAVING MODE (Eco Optimized)" else "HIGH-PERFORMANCE MODE (Maximum Clocks)"} (Status: ${_batteryInfo.value.health})
+                - CPU core temperature: ${String.format(java.util.Locale.US, "%.1f", _batteryInfo.value.temperatureCelsius)}°C
+                - Junk Temporary Cache Accumulation: ${_storageInfo.value.junkMB} MB
+                - Device Storage: Used ${_storageInfo.value.usedMB} MB of ${_storageInfo.value.totalMB} MB total
+                - Active Unfrozen Background Apps: ${_backgroundApps.value.count { !it.isAsleep }} active processes
+                
+                Provide tailored, targeted optimization tips based directly on these metrics! (e.g. if temperature is high or battery is low, warn the user and suggest saving measures).
                 
                 You are the highly capable Agentic AI Assistant of the Android "Mobile Optimiser" app.
                 Your user is fully authenticated via Gmail as: ${_userProfile.value?.email ?: "Guest User"}.
@@ -967,7 +1202,7 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
                 - To cool down system temperatures: output '[REDUCE_THERMALS]' at the end
                 - To resolve UI layout frame stutters and lock rendering speed: output '[RESOLVE_UI_LAG]' at the end
                 
-                Keep your responses in-character according to your persona and respect the user's registered preferences. Explain what you're doing, and assure the user that the action is occurring. 
+                Keep your responses in-character according to your persona, respect the user's registered preferences, and reference current metrics context if appropriate. Explain what you're doing, and assure the user that the action is occurring. 
                 Example reply: "I will engage the CPU Core Overclock protocol immediately. Locking clocks at peak speed! [BOOST_CPU_CORES]"
             """.trimIndent()
 

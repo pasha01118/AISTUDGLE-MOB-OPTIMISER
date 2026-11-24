@@ -72,6 +72,7 @@ fun SettingsScreen(
     val isDark by viewModel.isDarkTheme.collectAsState()
     val isHighContrast by viewModel.isHighContrast.collectAsState()
     val showSentinelFloatingButton by viewModel.showSentinelFloatingButton.collectAsState()
+    val isAutoJunkCleanEnabled by viewModel.isAutoJunkCleanEnabled.collectAsState()
     
     // --- Dynamic Multi-provider AI key flows ---
     val activeProvider by viewModel.selectedAiProvider.collectAsState()
@@ -227,6 +228,37 @@ fun SettingsScreen(
                         checked = showSentinelFloatingButton,
                         onCheckedChange = { viewModel.toggleSentinelFloatingButton() },
                         modifier = Modifier.testTag("sentinel_fab_switch"),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Auto-cleanup setting switch
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.DeleteSweep, contentDescription = "", tint = activeTextColor)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text("Automated Background Cleaning", fontSize = 13.sp, color = activeTextColor, fontWeight = FontWeight.SemiBold)
+                            Text("Auto-clean junk cache once memory exceeds 80%", fontSize = 10.sp, color = activeSubTextColor)
+                        }
+                    }
+
+                    Switch(
+                        checked = isAutoJunkCleanEnabled,
+                        onCheckedChange = { viewModel.toggleAutoJunkClean() },
+                        modifier = Modifier.testTag("auto_junk_clean_switch"),
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary,
                             checkedTrackColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.widget.Toast
 import android.animation.ValueAnimator
 import android.content.Context
 import android.os.Build
@@ -37,7 +38,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.viewmodel.OptimiserViewModel
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import kotlinx.coroutines.delay
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
 import java.text.DecimalFormat
 import java.util.Locale
 import kotlin.random.Random
@@ -138,7 +145,7 @@ fun HardwareScreen(
                 "Device" -> DeviceView(isHighContrast = isHighContrast)
                 "System" -> SystemView(isHighContrast = isHighContrast)
                 "CPU" -> CpuView(isHighContrast = isHighContrast)
-                "Battery" -> BatteryView(isHighContrast = isHighContrast)
+                "Battery" -> BatteryView(viewModel = viewModel, isHighContrast = isHighContrast)
                 "Sensors" -> SensorsView(isHighContrast = isHighContrast)
                 "Apps" -> AppsDiagnosticView(isHighContrast = isHighContrast)
                 "Tests" -> DiagnosticTestsView(isHighContrast = isHighContrast)
@@ -209,6 +216,7 @@ fun DashboardView(
     val scrollState = rememberScrollState()
     
     val isCpuOverclocked by viewModel.isCpuOverclocked.collectAsState()
+    val batteryInfo by viewModel.batteryInfo.collectAsState()
     
     // System simulated metrics
     var coreFreqs by remember(isCpuOverclocked) { 
@@ -221,6 +229,10 @@ fun DashboardView(
     }
     var ramPct by remember { mutableStateOf(58f) }
     var storagePct by remember { mutableStateOf(93f) }
+
+    // Rolling history for Recharts simulation
+    var cpuHistory by remember { mutableStateOf(List(10) { 20f + Random.nextInt(10, 30) }) }
+    var ramHistory by remember { mutableStateOf(List(10) { 45f + Random.nextInt(5, 12) }) }
 
     // Fluctuating stats simulating active background load
     LaunchedEffect(isCpuOverclocked) {
@@ -235,6 +247,12 @@ fun DashboardView(
                 }
             }
             ramPct = (58f + Random.nextFloat() * 3f).coerceIn(40f, 95f)
+            
+            val cpuAvgFreq = coreFreqs.average().toFloat()
+            val cpuPctSim = ((cpuAvgFreq / 2500f) * 100f).coerceIn(10f, 100f)
+            
+            cpuHistory = (cpuHistory + cpuPctSim).takeLast(10)
+            ramHistory = (ramHistory + ramPct).takeLast(10)
         }
     }
 
@@ -448,6 +466,130 @@ fun DashboardView(
             }
         }
 
+        // Real-time custom Hardware chart (Recharts Mobile Equivalent)
+        RealtimeHardwareChartCard(
+            cpuHistory = cpuHistory,
+            ramHistory = ramHistory,
+            temperatureCelsius = batteryInfo.temperatureCelsius,
+            isHighContrast = isHighContrast
+        )
+
+        // DOWNLOADABLE JSON DIAGNOSTIC DATA EXPORTER BUTTON
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    1.dp,
+                    if (isHighContrast) Color.White else Color(0xFF00E676).copy(alpha = 0.3f),
+                    RoundedCornerShape(12.dp)
+                )
+                .testTag("hardware_export_card"),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isHighContrast) Color.Black else Color(0xFF0F1C14)
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            val context = LocalContext.current
+            var isExporting by remember { mutableStateOf(false) }
+            var exportFilePath by remember { mutableStateOf<String?>(null) }
+            var showExportConfirmation by remember { mutableStateOf(false) }
+            var exportDialogJsonText by remember { mutableStateOf("") }
+            
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.FileDownload,
+                        contentDescription = "Export icon",
+                        tint = if (isHighContrast) Color.White else Color(0xFF00E676),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "DIAGNOSTIC DATA PORTABILITY",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isHighContrast) Color.White else Color(0xFF00E676),
+                        letterSpacing = 1.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Generate and save local JSON dump containing active CPU temperatures, simulated memory usage bounds, storage segments, and full optimization clean history.",
+                    fontSize = 11.sp,
+                    color = if (isHighContrast) Color.White else Color.LightGray
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                
+                Button(
+                    onClick = {
+                        isExporting = true
+                        viewModel.exportDiagnosticData(context) { file, jsonStr ->
+                            isExporting = false
+                            if (file != null) {
+                                exportFilePath = file.absolutePath
+                                exportDialogJsonText = jsonStr
+                                showExportConfirmation = true
+                                Toast.makeText(context, "Exported successfully to Downloads!", Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(context, "Export failed. Please try again.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isHighContrast) Color.White else Color(0xFF00E676),
+                        contentColor = if (isHighContrast) Color.Black else Color.Black
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(38.dp)
+                        .testTag("hardware_export_download_json_button"),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    if (isExporting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black)
+                    } else {
+                        Icon(imageVector = Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("GENERATE & DOWNLOAD JSON REPORT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                
+                if (showExportConfirmation && exportFilePath != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color.Green.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF131F17)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text("✓ Diagnostic File Saved!", color = Color.Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Path: $exportFilePath \n\nThis file is structured for offline Recharts / Jupyter notebook imports.", color = Color.White, fontSize = 10.sp)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                TextButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("DIAGNOSTICS_JSON", exportDialogJsonText)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Full JSON copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Text("COPY JSON DUMP", color = Color.Green, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                                TextButton(onClick = { showExportConfirmation = false }) {
+                                    Text("CLOSE", color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Quick Indicators (Sensors / All apps counts)
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -615,19 +757,182 @@ fun CpuView(isHighContrast: Boolean) {
 
 // ==================== 5. BATTERY VIEW ====================
 @Composable
-fun BatteryView(isHighContrast: Boolean) {
+fun BatteryRechartsCard(isHighContrast: Boolean) {
+    val htmlContent = remember(isHighContrast) {
+        val bgHex = if (isHighContrast) "#000000" else "#0F0F14"
+        val textHex = "#FFFFFF"
+        val accentHex = if (isHighContrast) "#FFFF00" else "#00E676"
+        val lineHex = if (isHighContrast) "#FFFFFF" else "#FF5252"
+        val gridHex = if (isHighContrast) "rgba(255,255,255,0.2)" else "rgba(255,255,255,0.06)"
+        
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+            <style>
+                body {
+                    margin: 0;
+                    padding: 8px;
+                    background-color: $bgHex;
+                    color: $textHex;
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    overflow: hidden;
+                }
+                .container {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    width: 100%;
+                }
+                .title {
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 1px;
+                    color: $accentHex;
+                    align-self: flex-start;
+                    margin-bottom: 8px;
+                    text-transform: uppercase;
+                }
+                .chart-container {
+                    position: relative;
+                    width: 100%;
+                    height: 140px;
+                }
+                svg {
+                    width: 100%;
+                    height: 100%;
+                }
+                .tooltip {
+                    position: absolute;
+                    background: rgba(0,0,0,0.85);
+                    border: 1px solid $accentHex;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 10px;
+                    display: none;
+                    pointer-events: none;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="title">RECHARTS Battery 24h Discharge</div>
+                <div class="chart-container">
+                    <svg viewBox="0 0 500 130">
+                        <line x1="40" y1="10" x2="480" y2="10" stroke="$gridHex" stroke-width="1"></line>
+                        <line x1="40" y1="40" x2="480" y2="40" stroke="$gridHex" stroke-width="1"></line>
+                        <line x1="40" y1="70" x2="480" y2="70" stroke="$gridHex" stroke-width="1"></line>
+                        <line x1="40" y1="100" x2="480" y2="100" stroke="$gridHex" stroke-width="1"></line>
+                        
+                        <line x1="40" y1="10" x2="40" y2="100" stroke="$gridHex" stroke-width="1.5"></line>
+                        <line x1="40" y1="100" x2="480" y2="100" stroke="$gridHex" stroke-width="1.5"></line>
+                        
+                        <text x="10" y="14" fill="#888" font-size="8">100%</text>
+                        <text x="10" y="44" fill="#888" font-size="8">70%</text>
+                        <text x="10" y="74" fill="#888" font-size="8">40%</text>
+                        <text x="10" y="104" fill="#888" font-size="8">10%</text>
+
+                        <text x="40" y="115" fill="#888" font-size="8" text-anchor="middle">24h</text>
+                        <text x="150" y="115" fill="#888" font-size="8" text-anchor="middle">18h</text>
+                        <text x="260" y="115" fill="#888" font-size="8" text-anchor="middle">12h</text>
+                        <text x="370" y="115" fill="#888" font-size="8" text-anchor="middle">6h</text>
+                        <text x="480" y="115" fill="#888" font-size="8" text-anchor="middle">Now</text>
+                        
+                        <defs>
+                            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="$lineHex" stop-opacity="0.3"/>
+                                <stop offset="100%" stop-color="$lineHex" stop-opacity="0"/>
+                            </linearGradient>
+                        </defs>
+                        
+                        <path d="M 40,10 L 150,28 L 260,49 L 370,69 L 480,83 L 480,100 L 40,100 Z" fill="url(#areaGrad)"></path>
+                        
+                        <path d="M 40,10 Q 95,19 150,28 T 260,49 T 370,69 T 480,83" 
+                              fill="none" stroke="$lineHex" stroke-width="3.5" stroke-linecap="round"></path>
+                        
+                        <circle cx="40" cy="10" r="4.5" fill="$lineHex" stroke="$bgHex" stroke-width="1.5" onclick="showTip(this, '24h ago', '100%')"></circle>
+                        <circle cx="150" cy="28" r="4.5" fill="$lineHex" stroke="$bgHex" stroke-width="1.5" onclick="showTip(this, '18h ago', '85%')"></circle>
+                        <circle cx="260" cy="49" r="4.5" fill="$lineHex" stroke="$bgHex" stroke-width="1.5" onclick="showTip(this, '12h ago', '72%')"></circle>
+                        <circle cx="370" cy="69" r="4.5" fill="$lineHex" stroke="$bgHex" stroke-width="1.5" onclick="showTip(this, '6h ago', '48%')"></circle>
+                        <circle cx="480" cy="83" r="4.5" fill="$lineHex" stroke="$bgHex" stroke-width="1.5" onclick="showTip(this, 'Now', '37%')"></circle>
+                    </svg>
+                    <div id="tip" class="tooltip"></div>
+                </div>
+            </div>
+            
+            <script>
+                function showTip(elem, hourLabel, valText) {
+                    var tip = document.getElementById('tip');
+                    var svg = elem.ownerSVGElement;
+                    var rect = svg.getBoundingClientRect();
+                    var cx = parseFloat(elem.getAttribute('cx'));
+                    var cy = parseFloat(elem.getAttribute('cy'));
+                    
+                    var ratioX = rect.width / 500;
+                    var ratioY = rect.height / 130;
+                    
+                    tip.style.left = (cx * ratioX) + 'px';
+                    tip.style.top = (cy * ratioY - 32) + 'px';
+                    tip.innerHTML = "<strong>" + hourLabel + "</strong><br/>Battery: " + valText;
+                    tip.style.display = 'block';
+                    
+                    setTimeout(function() {
+                        tip.style.display = 'none';
+                    }, 2200);
+                }
+            </script>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(185.dp)
+            .border(1.dp, if (isHighContrast) Color.White else Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+            .testTag("battery_recharts_chart_card"),
+        colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color.Black else Color(0xFF0F0F14)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        AndroidView(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                    }
+                    webViewClient = WebViewClient()
+                    setBackgroundColor(if (isHighContrast) android.graphics.Color.BLACK else android.graphics.Color.parseColor("#0F0F14"))
+                }
+            },
+            update = { webView ->
+                webView.loadDataWithBaseURL("https://recharts.org", htmlContent, "text/html", "UTF-8", null)
+            }
+        )
+    }
+}
+
+@Composable
+fun BatteryView(viewModel: OptimiserViewModel, isHighContrast: Boolean) {
+    val batteryInfo by viewModel.batteryInfo.collectAsState()
+    
     val items = listOf(
-        "Current Charge Level" to "37% (Discharging)",
+        "Current Charge Level" to "${batteryInfo.percentage}% (${if (batteryInfo.isCharging) "Charging" else "Discharging"})",
         "Raw Power Output" to "-2.81 Watts",
         "Voltage" to "3.80 Volts",
-        "Battery Temperature" to "91.4°F (33.0°C)",
-        "Health Assessment" to "Good",
-        "Power Source" to "Battery",
+        "Battery Temperature" to String.format(Locale.US, "%.1f°C (%.1f°F)", batteryInfo.temperatureCelsius, batteryInfo.temperatureCelsius * 1.8f + 32),
+        "Health Assessment" to batteryInfo.health,
+        "Power Source" to if (batteryInfo.isCharging) "AC Adapter" else "Battery",
         "Technology" to "Li-ion",
         "Total Design Capacity" to "5000.0 mAh"
     )
-    
-    val textAccent = if (isHighContrast) Color.Yellow else Color(0xFF00E676)
     
     LazyColumn(
         modifier = Modifier
@@ -642,7 +947,7 @@ fun BatteryView(isHighContrast: Boolean) {
                     .height(150.dp),
                 contentAlignment = Alignment.Center
             ) {
-                // Circle battery gauge matching 37%
+                // Circle battery gauge matching of real percentage!
                 Box(
                     modifier = Modifier
                         .size(120.dp)
@@ -655,13 +960,13 @@ fun BatteryView(isHighContrast: Boolean) {
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "37%",
+                            text = "${batteryInfo.percentage}%",
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White
                         )
                         Text(
-                            text = "DISCHARGING",
+                            text = if (batteryInfo.isCharging) "CHARGING" else "DISCHARGING",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isHighContrast) Color.Yellow else Color(0xFFFFB300)
@@ -669,6 +974,10 @@ fun BatteryView(isHighContrast: Boolean) {
                     }
                 }
             }
+        }
+        
+        item {
+            BatteryRechartsCard(isHighContrast = isHighContrast)
         }
         
         items(items) { (key, value) ->
@@ -1451,5 +1760,273 @@ fun KeyValueRow(key: String, value: String) {
             textAlign = TextAlign.End,
             modifier = Modifier.weight(1.1f)
         )
+    }
+}
+
+@Composable
+fun CircularProgressThermalIndicator(
+    temperature: Float,
+    isHighContrast: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val maxTemp = 60f
+    val progress = (temperature / maxTemp).coerceIn(0f, 1f)
+    val thermalColor = when {
+        isHighContrast -> Color.White
+        temperature < 32f -> Color(0xFF00E676) // cool-green
+        temperature < 42f -> Color(0xFFFFB300) // orange
+        else -> Color(0xFFFF5252) // hot-red
+    }
+    
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(70.dp)
+                .testTag("thermal_circular_indicator")
+        ) {
+            // Background track
+            CircularProgressIndicator(
+                progress = { 1.0f },
+                strokeWidth = 5.dp,
+                color = if (isHighContrast) Color.DarkGray else Color.White.copy(alpha = 0.08f),
+                modifier = Modifier.fillMaxSize()
+            )
+            // Progress colored arc
+            CircularProgressIndicator(
+                progress = { progress },
+                strokeWidth = 5.dp,
+                color = thermalColor,
+                modifier = Modifier.fillMaxSize()
+            )
+            
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = String.format(Locale.US, "%.1f°", temperature),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White
+                )
+                Text(
+                    text = when {
+                        temperature < 32f -> "COOL"
+                        temperature < 42f -> "WARM"
+                        else -> "HOT"
+                    },
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = thermalColor
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "THERMALS",
+            fontSize = 7.5.sp,
+            fontWeight = FontWeight.Black,
+            color = Color.Gray,
+            letterSpacing = 0.5.sp
+        )
+    }
+}
+
+@Composable
+fun RealtimeHardwareChartCard(
+    cpuHistory: List<Float>,
+    ramHistory: List<Float>,
+    temperatureCelsius: Float,
+    isHighContrast: Boolean
+) {
+    val cardBg = if (isHighContrast) Color.Black else Color(0xFF0F0F14)
+    val cardBorder = if (isHighContrast) Color.White else Color.White.copy(alpha = 0.1f)
+    val gridColor = if (isHighContrast) Color.White.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.08f)
+    
+    val cpuColor = if (isHighContrast) Color.White else Color(0xFF00E676)
+    val ramColor = if (isHighContrast) Color.Yellow else Color(0xFF8A2BE2)
+
+    val textPrimary = Color.White
+    val textSecondary = Color.Gray
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+            .testTag("hardware_live_chart_card"),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Timeline,
+                        contentDescription = "Real-time statistics",
+                        tint = cpuColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "REAL-TIME HARDWARE MONITOR",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = textPrimary,
+                        letterSpacing = 1.sp
+                    )
+                }
+                
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(8.dp).background(cpuColor, CircleShape))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("CPU", fontSize = 9.sp, color = textPrimary, fontWeight = FontWeight.Bold)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(8.dp).background(ramColor, CircleShape))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("RAM", fontSize = 9.sp, color = textPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(2.0f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                    ) {
+                        androidx.compose.foundation.Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(bottom = 12.dp, start = 30.dp, end = 10.dp)
+                        ) {
+                            val width = size.width
+                            val height = size.height
+
+                            val gridLines = 4
+                            for (i in 0..gridLines) {
+                                val y = (height / gridLines) * i
+                                drawLine(
+                                    color = gridColor,
+                                    start = androidx.compose.ui.geometry.Offset(0f, y),
+                                    end = androidx.compose.ui.geometry.Offset(width, y),
+                                    strokeWidth = 1f
+                                )
+                            }
+
+                            val vertLines = 6
+                            for (i in 0..vertLines) {
+                                val x = (width / vertLines) * i
+                                drawLine(
+                                    color = gridColor,
+                                    start = androidx.compose.ui.geometry.Offset(x, 0f),
+                                    end = androidx.compose.ui.geometry.Offset(x, height),
+                                    strokeWidth = 1f
+                                )
+                            }
+
+                            fun drawHistoryPath(history: List<Float>, lineColor: Color, fillColor: Color) {
+                                if (history.size < 2) return
+                                val path = Path()
+                                val fillPath = Path()
+                                
+                                val stepX = width / (history.size - 1)
+                                
+                                history.forEachIndexed { index, pct ->
+                                    val valueScaled = (pct / 100f).coerceIn(0f, 1f)
+                                    val y = height - (valueScaled * height)
+                                    val x = index * stepX
+
+                                    if (index == 0) {
+                                        path.moveTo(x, y)
+                                        fillPath.moveTo(x, height)
+                                        fillPath.lineTo(x, y)
+                                    } else {
+                                        path.lineTo(x, y)
+                                        fillPath.lineTo(x, y)
+                                    }
+
+                                    if (index == history.lastIndex) {
+                                        fillPath.lineTo(x, height)
+                                        fillPath.close()
+                                    }
+                                }
+
+                                val brush = Brush.verticalGradient(
+                                    colors = listOf(fillColor, Color.Transparent),
+                                    startY = 0f,
+                                    endY = height
+                                )
+
+                                clipRect {
+                                    drawPath(
+                                        path = fillPath,
+                                        brush = brush,
+                                        alpha = 0.12f
+                                    )
+                                    drawPath(
+                                        path = path,
+                                        color = lineColor,
+                                        style = Stroke(width = 3.dp.toPx())
+                                    )
+                                }
+                            }
+
+                            drawHistoryPath(cpuHistory, cpuColor, cpuColor)
+                            drawHistoryPath(ramHistory, ramColor, ramColor)
+                        }
+
+                        Column(
+                            modifier = Modifier.fillMaxHeight().width(26.dp),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            listOf("100%", "75%", "50%", "25%", "0%").forEach { label ->
+                                Text(
+                                    text = label,
+                                    fontSize = 8.sp,
+                                    color = textSecondary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 30.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        listOf("-15s", "-12s", "-9s", "-6s", "-3s", "Now").forEach { label ->
+                            Text(text = label, fontSize = 8.sp, color = textSecondary)
+                        }
+                    }
+                }
+
+                CircularProgressThermalIndicator(
+                    temperature = temperatureCelsius,
+                    isHighContrast = isHighContrast,
+                    modifier = Modifier
+                        .weight(1.0f)
+                        .padding(start = 12.dp)
+                )
+            }
+        }
     }
 }

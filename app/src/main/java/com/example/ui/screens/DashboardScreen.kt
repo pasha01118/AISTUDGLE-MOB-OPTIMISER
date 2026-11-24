@@ -28,21 +28,45 @@ import androidx.compose.material.icons.filled.BatterySaver
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DeviceThermostat
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,6 +74,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -73,9 +99,13 @@ fun DashboardScreen(
     val statusMsg by viewModel.optimizerStatusMessage.collectAsState()
     val thermalAlert by viewModel.thermalAlert.collectAsState()
     val batteryAlert by viewModel.batteryAlert.collectAsState()
+    val showJunkNotificationPrompt by viewModel.showJunkNotificationPrompt.collectAsState()
     val isHighContrast by viewModel.isHighContrast.collectAsState()
+    val isDarkTheme by viewModel.isDarkTheme.collectAsState()
+    val isPowerSavingMode by viewModel.isPowerSavingMode.collectAsState()
     val auditResult by viewModel.auditResult.collectAsState()
     val isAuditing by viewModel.isAuditing.collectAsState()
+    val logs by viewModel.activityLogs.collectAsState()
 
     // Color schema adaptive to High Contrast accessibility modifier
     val activeBgColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background
@@ -91,21 +121,22 @@ fun DashboardScreen(
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // App Core Title Tag
+        // App Core Title Tag with theme toggle
         item {
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp),
-                contentAlignment = Alignment.Center
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "MOBILE OPTIMISER",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.ExtraBold,
                             fontFamily = FontFamily.Monospace,
-                            letterSpacing = 2.sp
+                            letterSpacing = 1.5.sp
                         ),
                         color = activeTextColor
                     )
@@ -115,12 +146,23 @@ fun DashboardScreen(
                         color = activeSubTextColor
                     )
                 }
+                
+                IconButton(
+                    onClick = { viewModel.toggleDarkTheme() },
+                    modifier = Modifier.testTag("theme_toggle_button")
+                ) {
+                    Icon(
+                        imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        contentDescription = "Toggle Dark/Light Mode",
+                        tint = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
 
         // Warning alerts list
         item {
-            AnimatedVisibility(visible = thermalAlert != null || batteryAlert != null) {
+            AnimatedVisibility(visible = thermalAlert != null || batteryAlert != null || showJunkNotificationPrompt) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     thermalAlert?.let {
                         AlertCard(
@@ -137,6 +179,340 @@ fun DashboardScreen(
                             color = Color(0xFFE65100), // Dark orange
                             isHighContrast = isHighContrast
                         )
+                    }
+                    if (showJunkNotificationPrompt) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    1.dp,
+                                    if (isHighContrast) Color.White else Color(0xFF00E676).copy(alpha = 0.3f),
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .testTag("junk_alert_prompt_card"),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isHighContrast) Color.Black else Color(0xFF0D1B13)
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Junk Storage warning icon",
+                                        tint = if (isHighContrast) Color.White else Color(0xFF00E676),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "HIGH JUNK STORAGE TRASH ALERT",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isHighContrast) Color.White else Color(0xFF00E676),
+                                        letterSpacing = 1.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "System junk has exceeded 200 MB (current: ${storage.junkMB} MB)! We highly recommend running clean up vectors to prevent CPU stress.",
+                                    fontSize = 11.sp,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.End,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    TextButton(onClick = { viewModel.dismissJunkPrompt() }) {
+                                        Text("DISMISS", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Button(
+                                        onClick = { viewModel.cleanJunkFiles() },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isHighContrast) Color.White else Color(0xFF00E676),
+                                            contentColor = if (isHighContrast) Color.Black else Color.Black
+                                        ),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.height(30.dp).testTag("junk_alert_clean_now_button"),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("CLEAN NOW", fontSize = 10.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // QUICK-ACCESS OPERATIONS BAR
+        item {
+            val context = LocalContext.current
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp,
+                        if (isHighContrast) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .testTag("dashboard_quick_actions_card"),
+                colors = CardDefaults.cardColors(
+                    containerColor = activeCardBgColor
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "QUICK-ACCESS ACTIONS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = activeTextColor,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Clear RAM Button
+                        Button(
+                            onClick = {
+                                viewModel.clearRam {
+                                    Toast.makeText(context, "RAM quick-cleared successfully!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.primary
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("dashboard_quick_clear_ram"),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Memory,
+                                contentDescription = "Clear RAM",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Clear RAM", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Battery Saver Button
+                        Button(
+                            onClick = {
+                                viewModel.togglePowerSavingMode()
+                                Toast.makeText(context, "Battery Saver mode toggled!", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isHighContrast) Color.White else (if (isPowerSavingMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+                                contentColor = if (isHighContrast) Color.Black else (if (isPowerSavingMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("dashboard_quick_battery_saver"),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BatterySaver,
+                                contentDescription = "Battery Saver",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Battery Saver", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Deep Clean Button
+                        Button(
+                            onClick = {
+                                viewModel.cleanJunkFiles {
+                                    Toast.makeText(context, "System junk cache deep-cleaned successfully!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.primary
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .testTag("dashboard_quick_deep_clean"),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CleaningServices,
+                                contentDescription = "Deep Clean",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Deep Clean", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // REAL-TIME SYSTEM ACTIVITY LOG VIEWER WIDGET
+        item {
+            var selectedFilterType by remember { mutableStateOf("ALL") } // ALL, USER, AI
+            val filteredLogs = remember(logs, selectedFilterType) {
+                when (selectedFilterType) {
+                    "USER" -> logs.filter { it.activityType != "AUDIT" && !it.description.contains("AI", ignoreCase = true) }
+                    "AI" -> logs.filter { it.activityType == "AUDIT" || it.description.contains("AI", ignoreCase = true) }
+                    else -> logs
+                }.take(5)
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp,
+                        if (isHighContrast) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .testTag("dashboard_activity_logs_card"),
+                colors = CardDefaults.cardColors(
+                    containerColor = activeCardBgColor
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = "",
+                                tint = activeTextColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "REAL-TIME ACTIVITY LOGS",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = activeTextColor,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 1.sp
+                            )
+                        }
+
+                        // Filter selectors row
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf("ALL", "USER", "AI").forEach { type ->
+                                val isSelected = selectedFilterType == type
+                                val tagBg = if (isSelected) {
+                                    if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                                } else {
+                                    Color.Transparent
+                                }
+                                val tagText = if (isSelected) {
+                                    if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    activeTextColor
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .background(tagBg, RoundedCornerShape(4.dp))
+                                        .border(
+                                            1.dp, 
+                                            if (isHighContrast || isSelected) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), 
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                        .clickable { selectedFilterType = type }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        .testTag("log_filter_$type"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = type, 
+                                        fontSize = 8.sp, 
+                                        fontWeight = FontWeight.Bold, 
+                                        color = tagText
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (filteredLogs.isEmpty()) {
+                        Text(
+                            text = "No recorded logs match this filter category yet.",
+                            fontSize = 11.sp,
+                            color = activeSubTextColor,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            filteredLogs.forEach { log ->
+                                val isAiLog = log.activityType == "AUDIT" || log.description.contains("AI", ignoreCase = true)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface.copy(alpha = 0.3f),
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isHighContrast) Color.White else Color.Transparent,
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = if (isAiLog) Icons.Default.AutoAwesome else Icons.Default.Done,
+                                        contentDescription = if (isAiLog) "AI Suggestion" else "User Action",
+                                        tint = if (isAiLog) Color(0xFF81D4FA) else Color(0xFFC5E1A5),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = log.description,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = activeTextColor
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "Category: ${log.activityType}",
+                                                fontSize = 8.sp,
+                                                color = activeSubTextColor
+                                            )
+                                            Text(
+                                                text = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp)),
+                                                fontSize = 8.sp,
+                                                color = activeSubTextColor
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -366,10 +742,263 @@ fun DashboardScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = statusMsg,
+                                statusMsg,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = activeTextColor
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----------------- BATTERY PERFORMANCE DASHBOARD -----------------
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, activeBorderColor, RoundedCornerShape(16.dp))
+                    .testTag("battery_performance_dashboard"),
+                colors = CardDefaults.cardColors(containerColor = activeCardBgColor),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BatterySaver,
+                            contentDescription = "Battery Optimization Dashboard",
+                            tint = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "BATTERY PERFORMANCE ENGINE",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                            color = activeTextColor
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text(
+                        text = "Calibrate and manage how hardware resources are allocated to maximize power endurance or raw system performance parameters.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = activeSubTextColor
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isPowerSavingMode) "POWER-SAVING ACTIVE" else "HIGH-PERFORMANCE ACTIVE",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = if (isHighContrast) Color.White else if (isPowerSavingMode) Color(0xFF4CAF50) else Color(0xFFFF5252)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (isPowerSavingMode) 
+                                    "Extends battery backup; curbs background processes." 
+                                    else "Dynamic peak performance; unlocks unrestricted clocks.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = activeSubTextColor
+                            )
+                        }
+
+                        Switch(
+                            checked = !isPowerSavingMode,
+                            onCheckedChange = { viewModel.togglePowerSavingMode() },
+                            modifier = Modifier.testTag("performance_mode_switch"),
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = if (isHighContrast) Color.Black else Color.White,
+                                checkedTrackColor = if (isHighContrast) Color.White else Color(0xFFFF5252),
+                                uncheckedThumbColor = if (isHighContrast) Color.White else Color.White,
+                                uncheckedTrackColor = if (isHighContrast) Color.DarkGray else Color(0xFF4CAF50)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // ----------------- JUNK FILES CLEANUP SIMULATION -----------------
+        item {
+            var selectedSysCache by remember { mutableStateOf(true) }
+            var selectedLogs by remember { mutableStateOf(true) }
+            var selectedApkRemnants by remember { mutableStateOf(false) }
+
+            var simulationProgress by remember { mutableStateOf(0f) }
+            var activePhase by remember { mutableStateOf("") }
+            var isSimRunning by remember { mutableStateOf(false) }
+            val coroutineScope = rememberCoroutineScope()
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, activeBorderColor, RoundedCornerShape(16.dp))
+                    .testTag("junk_cleanup_dashboard"),
+                colors = CardDefaults.cardColors(containerColor = activeCardBgColor),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CleaningServices,
+                            contentDescription = "Junk Cleanup Simulator",
+                            tint = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "JUNK CACHE LAB SIMULATOR",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
+                            color = activeTextColor
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Configure monitored directories. Check targeted cache directories to simulate detailed files sweep.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = activeSubTextColor
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Category Checklist
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { if (!isSimRunning) selectedSysCache = !selectedSysCache }
+                        ) {
+                            Checkbox(
+                                checked = selectedSysCache,
+                                onCheckedChange = { if (!isSimRunning) selectedSysCache = it },
+                                enabled = !isSimRunning,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                                    checkmarkColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
+                            Column {
+                                Text("System App Cache", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = activeTextColor)
+                                Text("Temp variables & UI icons: ~142 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { if (!isSimRunning) selectedLogs = !selectedLogs }
+                        ) {
+                            Checkbox(
+                                checked = selectedLogs,
+                                onCheckedChange = { if (!isSimRunning) selectedLogs = it },
+                                enabled = !isSimRunning,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                                    checkmarkColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
+                            Column {
+                                Text("Obsolete Sentinel Logs", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = activeTextColor)
+                                Text("Older crash dumps & audits: ~68 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { if (!isSimRunning) selectedApkRemnants = !selectedApkRemnants }
+                        ) {
+                            Checkbox(
+                                checked = selectedApkRemnants,
+                                onCheckedChange = { if (!isSimRunning) selectedApkRemnants = it },
+                                enabled = !isSimRunning,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                                    checkmarkColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
+                            Column {
+                                Text("Residual Installer Remnants", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = activeTextColor)
+                                Text("Expired update packages: ~118 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    if (isSimRunning) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "Simulator status: $activePhase (${simulationProgress.toInt()}%)",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = activeTextColor
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LinearProgressIndicator(
+                                progress = { simulationProgress / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(3.dp)),
+                                color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                                trackColor = if (isHighContrast) Color.DarkGray else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                isSimRunning = true
+                                coroutineScope.launch {
+                                    activePhase = "Allocating paths..."
+                                    for (i in 0..100 step 20) {
+                                        simulationProgress = i.toFloat()
+                                        if (i == 40) activePhase = "Clearing caches..."
+                                        if (i == 80) activePhase = "Flushing indexes..."
+                                        delay(400)
+                                    }
+                                    isSimRunning = false
+                                    viewModel.cleanJunkFiles()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .testTag("simulate_cache_clean_button"),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                                contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("SIMULATE DIRECT CLEARANCE", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
