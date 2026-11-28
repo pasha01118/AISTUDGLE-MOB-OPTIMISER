@@ -1,3 +1,15 @@
 <resources>
     <string name="app_name">Mobile Optimiser</string>
+    <string name="widget_3g_live_description">3G Live Futuristic Battery &amp; Quick Saver Toggle</string>
+    <string name="widget_3g_enable_saver">ENABLE SAVER</string>
+    <string name="widget_3g_saver_active">SAVER ACTIVE</string>
+    <string name="scheduled_clean_title">SCHEDULED SAFE AUTO-CLEAN</string>
+    <string name="widget_cpu_live_description">Real-Time CPU Usage &amp; Core Load Monitor</string>
+    <string name="smart_power_schedule_title">SMART POWER SCHEDULING</string>
+    <string name="app_hibernation_title">APP BATTERY DRAIN &amp; HIBERNATION</string>
+    <string name="permission_manager_title">HIGH-RISK PERMISSION MANAGER</string>
+    <string name="hardware_trends_7d_title">7-DAY HARDWARE PERFORMANCE TRENDS</string>
+    <string name="export_csv_label">EXPORT CSV REPORT</string>
+    <string name="export_pdf_label">EXPORT PDF REPORT</string>
+    <string name="widget_glance_battery_description">Jetpack Glance Real-Time Battery &amp; One-Tap Battery Saver Toggle</string>
 </resources>

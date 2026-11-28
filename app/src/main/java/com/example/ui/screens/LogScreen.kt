@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,18 +37,23 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ActivityLog
 import com.example.data.model.BackupSnapshot
+import com.example.util.HardwareReportExporter
 import com.example.viewmodel.OptimiserViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -168,7 +175,24 @@ fun LogScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("ALL", "JUNK_CLEAN", "BATTERY_SAVER", "DEEP_SLEEP", "BACKUP_SNAPSHOT", "CLOUD_SYNC", "THERMAL_ALERT").forEach { type ->
+                        listOf(
+                            "ALL",
+                            "JUNK_CLEAN",
+                            "SCHEDULED_JUNK_CLEAN",
+                            "BATTERY_SAVER",
+                            "SMART_POWER_SCHEDULE",
+                            "DYNAMIC_POWER_PROFILE",
+                            "APP_HIBERNATION",
+                            "PERMISSION_AUDIT",
+                            "DEEP_SLEEP",
+                            "AUDIT",
+                            "DIAGNOSTICS_EXPORT",
+                            "SENTINEL_FIX",
+                            "JAMUN_REPAIR",
+                            "BACKUP_SNAPSHOT",
+                            "CLOUD_SYNC",
+                            "THERMAL_ALERT"
+                        ).forEach { type ->
                             val isSelected = selectedTypeFilter == type
                             val tagBg = if (isSelected) {
                                 if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
@@ -245,7 +269,7 @@ fun LogScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(46.dp)
+                            .height(48.dp)
                             .testTag("export_json_button"),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
@@ -253,9 +277,114 @@ fun LogScreen(
                         ),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "")
+                        Icon(Icons.Default.FileDownload, contentDescription = "Export JSON")
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("GENERATE & EXPORT HISTORY IN JSON", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Hardware Performance Logs CSV & PDF Report Export Buttons
+                    val isExportingCsv by viewModel.isExportingCsv.collectAsState()
+                    val isExportingPdf by viewModel.isExportingPdf.collectAsState()
+                    val lastReportExport by viewModel.lastReportExport.collectAsState()
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.exportHardwareReportCsv(context) { res ->
+                                    if (res != null) {
+                                        Toast.makeText(context, "CSV Report saved: ${res.publicDisplayPath}", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Failed to export CSV report.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            enabled = !isExportingCsv && !isExportingPdf,
+                            border = BorderStroke(1.dp, if (isHighContrast) Color.White else Color(0xFF00E676)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("log_export_csv_button")
+                        ) {
+                            if (isExportingCsv) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFF00E676))
+                            } else {
+                                Icon(Icons.Default.TableChart, contentDescription = "Export CSV", tint = if (isHighContrast) Color.White else Color(0xFF00E676), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("EXPORT CSV", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (isHighContrast) Color.White else Color(0xFF00E676))
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.exportHardwareReportPdf(context) { res ->
+                                    if (res != null) {
+                                        Toast.makeText(context, "PDF Report saved: ${res.publicDisplayPath}", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Failed to export PDF report.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            enabled = !isExportingCsv && !isExportingPdf,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isHighContrast) Color.White else Color(0xFFE53935),
+                                contentColor = if (isHighContrast) Color.Black else Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("log_export_pdf_button")
+                        ) {
+                            if (isExportingPdf) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                            } else {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = "Export PDF", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("EXPORT PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    lastReportExport?.let { report ->
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF0F2417), RoundedCornerShape(8.dp))
+                                .border(1.dp, Color(0xFF00E676).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "✓ ${report.format} Saved (${(report.byteSize / 1024).coerceAtLeast(1)} KB)",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = report.publicDisplayPath,
+                                    color = Color.White,
+                                    fontSize = 9.sp
+                                )
+                            }
+                            TextButton(
+                                onClick = {
+                                    val mime = if (report.format == "PDF") "application/pdf" else "text/csv"
+                                    HardwareReportExporter.shareExportedFile(context, report.file, mime)
+                                },
+                                modifier = Modifier.testTag("log_share_report_button")
+                            ) {
+                                Text("SHARE", color = Color(0xFF40C4FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
@@ -537,12 +666,20 @@ fun AuditLogCardRow(
     val dateString = dateFormat.format(Date(log.timestamp))
 
     val colorAccent = when (log.activityType.uppercase(Locale.ROOT)) {
-        "JUNK_CLEAN" -> Color(0xFF4CAF50)
+        "JUNK_CLEAN", "SCHEDULED_JUNK_CLEAN" -> Color(0xFF4CAF50)
         "BATTERY_SAVER" -> Color(0xFF03A9F4)
+        "SMART_POWER_SCHEDULE" -> Color(0xFF536DFE)
+        "DYNAMIC_POWER_PROFILE" -> Color(0xFFFF6D00)
+        "APP_HIBERNATION" -> Color(0xFFFF7043)
+        "PERMISSION_AUDIT" -> Color(0xFFFF5252)
         "DEEP_SLEEP" -> Color(0xFF9C27B0)
+        "AUDIT" -> Color(0xFF81D4FA)
+        "DIAGNOSTICS_EXPORT" -> Color(0xFF00E676)
+        "SENTINEL_FIX", "SENTINEL_ALERT" -> Color(0xFFE53935)
+        "JAMUN_REPAIR", "THERMAL_CALIB", "MONITOR" -> Color(0xFF7C4DFF)
         "BACKUP_SNAPSHOT" -> Color(0xFF2196F3)
         "CLOUD_SYNC" -> Color(0xFFE91E63)
-        else -> Color(0xFFFF9800) // Theraml/Alert warning
+        else -> Color(0xFFFF9800) // Thermal/Alert warning
     }
 
     val activeTextColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface

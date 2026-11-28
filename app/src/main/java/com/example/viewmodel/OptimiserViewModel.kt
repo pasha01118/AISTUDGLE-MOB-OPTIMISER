@@ -29,6 +29,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+data class DynamicPowerSuggestion(
+    val reasonTitle: String,
+    val reasonDetail: String,
+    val triggerType: String, // LOW_BATTERY or HIGH_TEMP
+    val recommendedProfile: String = "Power Saving Mode"
+)
+
 class OptimiserViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application)
     private val repository = OptimiserRepository(application, db.activityLogDao())
@@ -108,6 +115,74 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isPowerSavingMode = MutableStateFlow(true)
     val isPowerSavingMode: StateFlow<Boolean> = _isPowerSavingMode.asStateFlow()
 
+    // --- Manual Safe Junk Cleanup Checkboxes & Daily WorkManager Schedule ---
+    private val _tickSysCache = MutableStateFlow(true)
+    val tickSysCache: StateFlow<Boolean> = _tickSysCache.asStateFlow()
+
+    private val _tickObsoleteLogs = MutableStateFlow(true)
+    val tickObsoleteLogs: StateFlow<Boolean> = _tickObsoleteLogs.asStateFlow()
+
+    private val _tickApkRemnants = MutableStateFlow(false)
+    val tickApkRemnants: StateFlow<Boolean> = _tickApkRemnants.asStateFlow()
+
+    private val _tickTempThumbnails = MutableStateFlow(true)
+    val tickTempThumbnails: StateFlow<Boolean> = _tickTempThumbnails.asStateFlow()
+
+    private val _isScheduledJunkCleanEnabled = MutableStateFlow(false)
+    val isScheduledJunkCleanEnabled: StateFlow<Boolean> = _isScheduledJunkCleanEnabled.asStateFlow()
+
+    private val _scheduledCleanHour = MutableStateFlow(3) // Default 3:00 AM
+    val scheduledCleanHour: StateFlow<Int> = _scheduledCleanHour.asStateFlow()
+
+    private val _scheduledCleanMinute = MutableStateFlow(0)
+    val scheduledCleanMinute: StateFlow<Int> = _scheduledCleanMinute.asStateFlow()
+
+    private val _lastScheduledCleanSummary = MutableStateFlow("Not run yet")
+    val lastScheduledCleanSummary: StateFlow<String> = _lastScheduledCleanSummary.asStateFlow()
+
+    // --- Smart Power Scheduling (Sleep Hours Auto Battery Saver) ---
+    private val _isSmartPowerScheduleEnabled = MutableStateFlow(false)
+    val isSmartPowerScheduleEnabled: StateFlow<Boolean> = _isSmartPowerScheduleEnabled.asStateFlow()
+
+    private val _sleepStartHour = MutableStateFlow(23) // 11:00 PM
+    val sleepStartHour: StateFlow<Int> = _sleepStartHour.asStateFlow()
+
+    private val _sleepStartMinute = MutableStateFlow(0)
+    val sleepStartMinute: StateFlow<Int> = _sleepStartMinute.asStateFlow()
+
+    private val _sleepEndHour = MutableStateFlow(7) // 7:00 AM
+    val sleepEndHour: StateFlow<Int> = _sleepEndHour.asStateFlow()
+
+    private val _sleepEndMinute = MutableStateFlow(0)
+    val sleepEndMinute: StateFlow<Int> = _sleepEndMinute.asStateFlow()
+
+    private val _isCurrentlyInSleepWindow = MutableStateFlow(false)
+    val isCurrentlyInSleepWindow: StateFlow<Boolean> = _isCurrentlyInSleepWindow.asStateFlow()
+
+    // --- Dynamic Power Profiles (<20% Battery or High Temp Auto-Suggestion) ---
+    private val _isDynamicProfilesEnabled = MutableStateFlow(true)
+    val isDynamicProfilesEnabled: StateFlow<Boolean> = _isDynamicProfilesEnabled.asStateFlow()
+
+    private val _dynamicPowerSuggestion = MutableStateFlow<DynamicPowerSuggestion?>(null)
+    val dynamicPowerSuggestion: StateFlow<DynamicPowerSuggestion?> = _dynamicPowerSuggestion.asStateFlow()
+
+    // --- Installed App Battery Drain Scanner & App Hibernation ---
+    private val _drainScanResults = MutableStateFlow<List<com.example.data.repository.AppDrainCandidate>>(emptyList())
+    val drainScanResults: StateFlow<List<com.example.data.repository.AppDrainCandidate>> = _drainScanResults.asStateFlow()
+
+    private val _isScanningAppDrain = MutableStateFlow(false)
+    val isScanningAppDrain: StateFlow<Boolean> = _isScanningAppDrain.asStateFlow()
+
+    // --- Real-time CPU Telemetry (shared with Secondary Home Screen CPU Widget) ---
+    private val _cpuUsagePercent = MutableStateFlow(42f)
+    val cpuUsagePercent: StateFlow<Float> = _cpuUsagePercent.asStateFlow()
+
+    private val _cpuAvgMhz = MutableStateFlow(1680)
+    val cpuAvgMhz: StateFlow<Int> = _cpuAvgMhz.asStateFlow()
+
+    private val _cpuHistory = MutableStateFlow(listOf(28f, 34f, 41f, 38f, 46f, 42f, 39f, 44f, 40f, 42f))
+    val cpuHistory: StateFlow<List<Float>> = _cpuHistory.asStateFlow()
+
     // --- GMail Authentication State (Google Identity simulation) ---
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
     val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
@@ -117,6 +192,26 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
 
     // --- SharedPreferences Backed AI Configuration System ---
     private val prefs = application.getSharedPreferences("ai_settings", android.content.Context.MODE_PRIVATE)
+
+    private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { shared, key ->
+        when (key) {
+            com.example.widget.Live3GBatteryWidgetProvider.KEY_POWER_SAVING_MODE -> {
+                val updated = shared.getBoolean(key, true)
+                if (_isPowerSavingMode.value != updated) {
+                    _isPowerSavingMode.value = updated
+                }
+            }
+            com.example.worker.JunkCleanupPrefs.KEY_LAST_RUN_SUMMARY -> {
+                _lastScheduledCleanSummary.value = shared.getString(key, "Not run yet") ?: "Not run yet"
+            }
+            com.example.worker.BatteryDrainScannerPrefs.KEY_LAST_BG_SCAN_SUMMARY -> {
+                _lastBgDrainScanSummary.value = shared.getString(key, "Not scanned yet") ?: "Not scanned yet"
+            }
+            com.example.worker.SmartPowerPrefs.KEY_LAST_WORKER_CHECK -> {
+                _lastSmartPowerWorkerCheck.value = shared.getString(key, "Pending first check") ?: "Pending first check"
+            }
+        }
+    }
 
     private val _showSentinelFloatingButton = MutableStateFlow(prefs.getBoolean("show_sentinel_floating_button", true))
     val showSentinelFloatingButton: StateFlow<Boolean> = _showSentinelFloatingButton.asStateFlow()
@@ -226,11 +321,86 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isAuditing = MutableStateFlow(false)
     val isAuditing: StateFlow<Boolean> = _isAuditing.asStateFlow()
 
+    // --- High-Risk Permission Manager States ---
+    private val revokedPermissionPackages = mutableSetOf<String>()
+    private val _highRiskAppPermissions = MutableStateFlow<List<com.example.data.repository.HighRiskAppPermission>>(emptyList())
+    val highRiskAppPermissions: StateFlow<List<com.example.data.repository.HighRiskAppPermission>> = _highRiskAppPermissions.asStateFlow()
+
+    private val _isScanningPermissions = MutableStateFlow(false)
+    val isScanningPermissions: StateFlow<Boolean> = _isScanningPermissions.asStateFlow()
+
+    // --- 7-Day Hardware Performance Trends & CSV/PDF Report Export States ---
+    private val _hardware7DayTrends = MutableStateFlow<List<com.example.data.repository.DailyHardwareTrendPoint>>(emptyList())
+    val hardware7DayTrends: StateFlow<List<com.example.data.repository.DailyHardwareTrendPoint>> = _hardware7DayTrends.asStateFlow()
+
+    private val _isExportingCsv = MutableStateFlow(false)
+    val isExportingCsv: StateFlow<Boolean> = _isExportingCsv.asStateFlow()
+
+    private val _isExportingPdf = MutableStateFlow(false)
+    val isExportingPdf: StateFlow<Boolean> = _isExportingPdf.asStateFlow()
+
+    private val _lastReportExport = MutableStateFlow<com.example.util.ReportExportResult?>(null)
+    val lastReportExport: StateFlow<com.example.util.ReportExportResult?> = _lastReportExport.asStateFlow()
+
+    // --- Background Battery Drain Scanner Worker & Smart Power Worker Telemetry ---
+    private val _isBgDrainScannerEnabled = MutableStateFlow(false)
+    val isBgDrainScannerEnabled: StateFlow<Boolean> = _isBgDrainScannerEnabled.asStateFlow()
+
+    private val _lastBgDrainScanSummary = MutableStateFlow("Not scanned yet")
+    val lastBgDrainScanSummary: StateFlow<String> = _lastBgDrainScanSummary.asStateFlow()
+
+    private val _lastSmartPowerWorkerCheck = MutableStateFlow("Pending first check")
+    val lastSmartPowerWorkerCheck: StateFlow<String> = _lastSmartPowerWorkerCheck.asStateFlow()
+
     init {
         _isAutoJunkCleanEnabled.value = prefs.getBoolean("is_auto_junk_clean_enabled", false)
+        _isPowerSavingMode.value = prefs.getBoolean(com.example.widget.Live3GBatteryWidgetProvider.KEY_POWER_SAVING_MODE, true)
+        _tickSysCache.value = prefs.getBoolean(com.example.worker.JunkCleanupPrefs.KEY_TICK_SYS_CACHE, true)
+        _tickObsoleteLogs.value = prefs.getBoolean(com.example.worker.JunkCleanupPrefs.KEY_TICK_OBSOLETE_LOGS, true)
+        _tickApkRemnants.value = prefs.getBoolean(com.example.worker.JunkCleanupPrefs.KEY_TICK_APK_REMNANTS, false)
+        _tickTempThumbnails.value = prefs.getBoolean(com.example.worker.JunkCleanupPrefs.KEY_TICK_TEMP_THUMBNAILS, true)
+        _isScheduledJunkCleanEnabled.value = prefs.getBoolean(com.example.worker.JunkCleanupPrefs.KEY_SCHEDULED_ENABLED, false)
+        _scheduledCleanHour.value = prefs.getInt(com.example.worker.JunkCleanupPrefs.KEY_SCHEDULED_HOUR, 3)
+        _scheduledCleanMinute.value = prefs.getInt(com.example.worker.JunkCleanupPrefs.KEY_SCHEDULED_MINUTE, 0)
+        _lastScheduledCleanSummary.value = prefs.getString(com.example.worker.JunkCleanupPrefs.KEY_LAST_RUN_SUMMARY, "Not run yet") ?: "Not run yet"
+
+        _isSmartPowerScheduleEnabled.value = prefs.getBoolean(com.example.worker.SmartPowerPrefs.KEY_SMART_POWER_ENABLED, false)
+        _sleepStartHour.value = prefs.getInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_START_HOUR, 23)
+        _sleepStartMinute.value = prefs.getInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_START_MINUTE, 0)
+        _sleepEndHour.value = prefs.getInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_END_HOUR, 7)
+        _sleepEndMinute.value = prefs.getInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_END_MINUTE, 0)
+        _isDynamicProfilesEnabled.value = prefs.getBoolean(com.example.worker.SmartPowerPrefs.KEY_DYNAMIC_PROFILES_ENABLED, true)
+        _isBgDrainScannerEnabled.value = prefs.getBoolean(com.example.worker.BatteryDrainScannerPrefs.KEY_BG_SCANNER_ENABLED, true)
+        _lastBgDrainScanSummary.value = prefs.getString(com.example.worker.BatteryDrainScannerPrefs.KEY_LAST_BG_SCAN_SUMMARY, "Background scanner ready") ?: "Background scanner ready"
+        _lastSmartPowerWorkerCheck.value = prefs.getString(com.example.worker.SmartPowerPrefs.KEY_LAST_WORKER_CHECK, "Pending first worker check") ?: "Pending first worker check"
+
+        prefs.registerOnSharedPreferenceChangeListener(prefsListener)
+
+        if (_isScheduledJunkCleanEnabled.value) {
+            com.example.worker.JunkCleanupScheduler.scheduleDailyCleanup(
+                getApplication(),
+                _scheduledCleanHour.value,
+                _scheduledCleanMinute.value
+            )
+        }
+        if (_isSmartPowerScheduleEnabled.value) {
+            com.example.worker.SmartPowerScheduler.schedulePeriodicCheck(getApplication())
+        }
+        if (_isBgDrainScannerEnabled.value) {
+            com.example.worker.BatteryDrainScannerScheduler.schedulePeriodicScan(getApplication())
+        }
+
         viewModelScope.launch {
             _storageInfo.value = repository.getDeviceStorageInfo()
             _batteryInfo.value = repository.getBatteryInfo()
+            evaluateSmartPowerClock()
+            evaluateAlerts()
+            com.example.widget.Live3GBatteryWidgetProvider.updateAllWidgets(getApplication())
+            com.example.widget.GlanceBatteryWidgetHelper.updateAll(getApplication())
+            com.example.widget.LiveCpuUsageWidgetProvider.updateAllWidgets(getApplication(), _cpuUsagePercent.value.toInt(), _cpuAvgMhz.value)
+            refresh7DayHardwareTrends()
+            scanHighRiskPermissions()
+            scanAppsForBatteryDrain()
         }
         loadOfflineModels()
         // Start periodic simulator loops for real-time monitoring and thermal variance
@@ -406,6 +576,34 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
         } else {
             _hasNotifiedJunkThreshold = false
         }
+
+        // Dynamic Power Profiles: auto-suggest switching to Power Saving Mode when battery < 20% or temp >= 38.5°C
+        if (_isDynamicProfilesEnabled.value && !_isPowerSavingMode.value) {
+            when {
+                pct < 20 -> {
+                    _dynamicPowerSuggestion.value = DynamicPowerSuggestion(
+                        reasonTitle = "Low Battery ($pct% < 20% Threshold)",
+                        reasonDetail = "Battery level dropped below 20%. Switch to Power Saving Mode now to curb background wakeups and extend endurance.",
+                        triggerType = "LOW_BATTERY"
+                    )
+                }
+                temp >= 38.5f -> {
+                    _dynamicPowerSuggestion.value = DynamicPowerSuggestion(
+                        reasonTitle = "High Hardware Temperature (${String.format(Locale.getDefault(), "%.1f", temp)}°C)",
+                        reasonDetail = "Hardware monitor detected elevated core thermals (≥ 38.5°C). Switch to Power Saving Mode to reduce clock heat.",
+                        triggerType = "HIGH_TEMP"
+                    )
+                }
+                else -> {
+                    _dynamicPowerSuggestion.value = null
+                }
+            }
+        } else if (_isPowerSavingMode.value) {
+            _dynamicPowerSuggestion.value = null
+        }
+
+        // Smart Power Scheduling clock check
+        evaluateSmartPowerClock()
     }
 
     // --- Optimization Commands ---
@@ -666,22 +864,442 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
         _isHighContrast.value = !_isHighContrast.value
     }
 
-    fun togglePowerSavingMode() {
-        val newValue = !_isPowerSavingMode.value
-        _isPowerSavingMode.value = newValue
-        if (newValue) {
-            _optimizerStatusMessage.value = "Power-Saving Mode Enabled: Throttle core clocks to conserve energy & secure silicon longevity."
+    fun setJunkCategoryTicked(key: String, ticked: Boolean) {
+        when (key) {
+            com.example.worker.JunkCleanupPrefs.KEY_TICK_SYS_CACHE -> _tickSysCache.value = ticked
+            com.example.worker.JunkCleanupPrefs.KEY_TICK_OBSOLETE_LOGS -> _tickObsoleteLogs.value = ticked
+            com.example.worker.JunkCleanupPrefs.KEY_TICK_APK_REMNANTS -> _tickApkRemnants.value = ticked
+            com.example.worker.JunkCleanupPrefs.KEY_TICK_TEMP_THUMBNAILS -> _tickTempThumbnails.value = ticked
+        }
+        prefs.edit().putBoolean(key, ticked).apply()
+    }
+
+    fun toggleScheduledJunkClean(enabled: Boolean) {
+        _isScheduledJunkCleanEnabled.value = enabled
+        prefs.edit().putBoolean(com.example.worker.JunkCleanupPrefs.KEY_SCHEDULED_ENABLED, enabled).apply()
+        val hour = _scheduledCleanHour.value
+        val minute = _scheduledCleanMinute.value
+        val formattedTime = com.example.worker.JunkCleanupScheduler.formatTime12Hour(hour, minute)
+
+        if (enabled) {
+            com.example.worker.JunkCleanupScheduler.scheduleDailyCleanup(getApplication(), hour, minute)
+            _optimizerStatusMessage.value = "Daily safe junk auto-clean scheduled for $formattedTime."
+        } else {
+            com.example.worker.JunkCleanupScheduler.cancelDailyCleanup(getApplication())
+            _optimizerStatusMessage.value = "Daily scheduled safe junk auto-clean disabled."
+        }
+
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "SCHEDULED_JUNK_CLEAN",
+                description = if (enabled) {
+                    "Scheduled recurring daily safe junk cleanup at $formattedTime for manually ticked categories"
+                } else {
+                    "Cancelled recurring daily safe junk cleanup schedule"
+                },
+                detailsMap = mapOf(
+                    "enabled" to enabled.toString(),
+                    "scheduled_time" to formattedTime
+                )
+            )
+        }
+    }
+
+    fun updateScheduledCleanTime(hour: Int, minute: Int) {
+        val safeHour = hour.coerceIn(0, 23)
+        val safeMinute = minute.coerceIn(0, 59)
+        _scheduledCleanHour.value = safeHour
+        _scheduledCleanMinute.value = safeMinute
+        prefs.edit()
+            .putInt(com.example.worker.JunkCleanupPrefs.KEY_SCHEDULED_HOUR, safeHour)
+            .putInt(com.example.worker.JunkCleanupPrefs.KEY_SCHEDULED_MINUTE, safeMinute)
+            .apply()
+
+        val formattedTime = com.example.worker.JunkCleanupScheduler.formatTime12Hour(safeHour, safeMinute)
+        if (_isScheduledJunkCleanEnabled.value) {
+            com.example.worker.JunkCleanupScheduler.scheduleDailyCleanup(getApplication(), safeHour, safeMinute)
+            _optimizerStatusMessage.value = "Rescheduled daily safe junk auto-clean to $formattedTime."
+        }
+
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "SCHEDULED_JUNK_CLEAN",
+                description = "Updated automatic safe junk cleanup time to $formattedTime",
+                detailsMap = mapOf("scheduled_time" to formattedTime)
+            )
+        }
+    }
+
+    fun triggerScheduledWorkerNow() {
+        com.example.worker.JunkCleanupScheduler.runNowOnce(getApplication())
+        _optimizerStatusMessage.value = "Triggered background safe junk worker for ticked categories!"
+    }
+
+    // --- Smart Power Scheduling Handlers ---
+    fun evaluateSmartPowerClock() {
+        val inWindow = com.example.worker.SmartPowerScheduler.isWithinSleepWindow(
+            _sleepStartHour.value,
+            _sleepStartMinute.value,
+            _sleepEndHour.value,
+            _sleepEndMinute.value
+        )
+        _isCurrentlyInSleepWindow.value = inWindow
+
+        if (_isSmartPowerScheduleEnabled.value && inWindow && !_isPowerSavingMode.value) {
+            setPowerSavingMode(enabled = true, reason = "Smart Power Scheduling (Sleep Hours)")
+            viewModelScope.launch {
+                repository.insertLog(
+                    type = "SMART_POWER_SCHEDULE",
+                    description = "Automatically enabled Battery Saver during sleep hours (${com.example.worker.SmartPowerScheduler.formatTime12Hour(_sleepStartHour.value, _sleepStartMinute.value)} - ${com.example.worker.SmartPowerScheduler.formatTime12Hour(_sleepEndHour.value, _sleepEndMinute.value)})",
+                    detailsMap = mapOf("trigger" to "device_clock")
+                )
+            }
+        }
+    }
+
+    fun toggleSmartPowerSchedule(enabled: Boolean) {
+        _isSmartPowerScheduleEnabled.value = enabled
+        prefs.edit().putBoolean(com.example.worker.SmartPowerPrefs.KEY_SMART_POWER_ENABLED, enabled).apply()
+        if (enabled) {
+            com.example.worker.SmartPowerScheduler.schedulePeriodicCheck(getApplication())
+            evaluateSmartPowerClock()
+        } else {
+            com.example.worker.SmartPowerScheduler.cancelPeriodicCheck(getApplication())
+        }
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "SMART_POWER_SCHEDULE",
+                description = "Smart Power Scheduling ${if (enabled) "ENABLED" else "DISABLED"} (${com.example.worker.SmartPowerScheduler.formatTime12Hour(_sleepStartHour.value, _sleepStartMinute.value)} - ${com.example.worker.SmartPowerScheduler.formatTime12Hour(_sleepEndHour.value, _sleepEndMinute.value)})",
+                detailsMap = mapOf("enabled" to enabled.toString())
+            )
+        }
+    }
+
+    fun updateSleepStartTime(hour: Int, minute: Int) {
+        _sleepStartHour.value = hour.coerceIn(0, 23)
+        _sleepStartMinute.value = minute.coerceIn(0, 59)
+        prefs.edit()
+            .putInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_START_HOUR, _sleepStartHour.value)
+            .putInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_START_MINUTE, _sleepStartMinute.value)
+            .apply()
+        evaluateSmartPowerClock()
+    }
+
+    fun updateSleepEndTime(hour: Int, minute: Int) {
+        _sleepEndHour.value = hour.coerceIn(0, 23)
+        _sleepEndMinute.value = minute.coerceIn(0, 59)
+        prefs.edit()
+            .putInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_END_HOUR, _sleepEndHour.value)
+            .putInt(com.example.worker.SmartPowerPrefs.KEY_SLEEP_END_MINUTE, _sleepEndMinute.value)
+            .apply()
+        evaluateSmartPowerClock()
+    }
+
+    // --- Dynamic Power Profiles Handlers ---
+    fun toggleDynamicPowerProfiles(enabled: Boolean) {
+        _isDynamicProfilesEnabled.value = enabled
+        prefs.edit().putBoolean(com.example.worker.SmartPowerPrefs.KEY_DYNAMIC_PROFILES_ENABLED, enabled).apply()
+        if (!enabled) {
+            _dynamicPowerSuggestion.value = null
+        } else {
+            viewModelScope.launch { evaluateAlerts() }
+        }
+    }
+
+    fun acceptDynamicPowerSuggestion() {
+        val currentSuggestion = _dynamicPowerSuggestion.value
+        setPowerSavingMode(enabled = true, reason = currentSuggestion?.reasonTitle ?: "Dynamic Power Profile")
+        _dynamicPowerSuggestion.value = null
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "DYNAMIC_POWER_PROFILE",
+                description = "Accepted Dynamic Power Profile switch to Power Saving Mode (${currentSuggestion?.reasonTitle ?: "Threshold triggered"})",
+                detailsMap = mapOf("trigger" to (currentSuggestion?.triggerType ?: "MANUAL"))
+            )
+        }
+    }
+
+    fun dismissDynamicPowerSuggestion() {
+        _dynamicPowerSuggestion.value = null
+    }
+
+    // --- Installed App Battery Drain Scanner & Hibernation ---
+    fun scanAppsForBatteryDrain() {
+        viewModelScope.launch {
+            _isScanningAppDrain.value = true
+            _optimizerStatusMessage.value = "Scanning installed apps for high battery drain patterns..."
+            delay(900)
+            val found = repository.scanInstalledAppsForBatteryDrain()
+            _drainScanResults.value = found
+            _isScanningAppDrain.value = false
+            _optimizerStatusMessage.value = "Detected ${found.size} high-consumption background apps eligible for App Hibernation."
+            repository.insertLog(
+                type = "APP_HIBERNATION",
+                description = "Scanned installed apps: identified ${found.size} high-battery drain processes for hibernation",
+                detailsMap = mapOf("flagged_count" to found.size.toString())
+            )
+        }
+    }
+
+    fun hibernateDrainingApp(packageName: String) {
+        var targetName = packageName
+        _drainScanResults.value = _drainScanResults.value.map { candidate ->
+            if (candidate.packageName == packageName) {
+                targetName = candidate.appName
+                candidate.copy(isHibernated = true)
+            } else {
+                candidate
+            }
+        }
+        _backgroundApps.value = _backgroundApps.value.map { app ->
+            if (app.packageName == packageName) app.copy(isAsleep = true) else app
+        }
+        val persistedHibernated = (prefs.getStringSet(com.example.worker.BatteryDrainScannerPrefs.KEY_HIBERNATED_PACKAGES, emptySet()) ?: emptySet()).toMutableSet()
+        persistedHibernated.add(packageName)
+        prefs.edit().putStringSet(com.example.worker.BatteryDrainScannerPrefs.KEY_HIBERNATED_PACKAGES, persistedHibernated).apply()
+
+        _optimizerStatusMessage.value = "Hibernated $targetName to curb background battery drain."
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "APP_HIBERNATION",
+                description = "Hibernated battery-draining background app: $targetName",
+                detailsMap = mapOf("package" to packageName, "action" to "HIBERNATED")
+            )
+        }
+    }
+
+    fun hibernateAllDrainingApps() {
+        val toHibernate = _drainScanResults.value.filter { !it.isHibernated }
+        if (toHibernate.isEmpty()) return
+        val pkgSet = toHibernate.map { it.packageName }.toSet()
+        _drainScanResults.value = _drainScanResults.value.map { it.copy(isHibernated = true) }
+        _backgroundApps.value = _backgroundApps.value.map { app ->
+            if (app.packageName in pkgSet) app.copy(isAsleep = true) else app
+        }
+        val persistedHibernated = (prefs.getStringSet(com.example.worker.BatteryDrainScannerPrefs.KEY_HIBERNATED_PACKAGES, emptySet()) ?: emptySet()).toMutableSet()
+        persistedHibernated.addAll(pkgSet)
+        prefs.edit().putStringSet(com.example.worker.BatteryDrainScannerPrefs.KEY_HIBERNATED_PACKAGES, persistedHibernated).apply()
+
+        _optimizerStatusMessage.value = "Hibernated ${toHibernate.size} battery-draining apps!"
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "APP_HIBERNATION",
+                description = "Bulk-hibernated ${toHibernate.size} high-consumption background apps",
+                detailsMap = mapOf("hibernated_count" to toHibernate.size.toString())
+            )
+        }
+    }
+
+    fun toggleBgDrainScanner(enabled: Boolean) {
+        _isBgDrainScannerEnabled.value = enabled
+        prefs.edit().putBoolean(com.example.worker.BatteryDrainScannerPrefs.KEY_BG_SCANNER_ENABLED, enabled).apply()
+        if (enabled) {
+            com.example.worker.BatteryDrainScannerScheduler.schedulePeriodicScan(getApplication())
+            com.example.worker.BatteryDrainScannerScheduler.runNowOnce(getApplication())
+            _optimizerStatusMessage.value = "Background Battery Drain Scanner enabled (scans every 30 min)."
+        } else {
+            com.example.worker.BatteryDrainScannerScheduler.cancelPeriodicScan(getApplication())
+            _optimizerStatusMessage.value = "Background Battery Drain Scanner paused."
+        }
+    }
+
+    fun triggerBgDrainScanNow() {
+        com.example.worker.BatteryDrainScannerScheduler.runNowOnce(getApplication())
+        scanAppsForBatteryDrain()
+    }
+
+    fun runSmartPowerWorkerNow() {
+        com.example.worker.SmartPowerScheduler.runImmediateCheck(getApplication())
+        evaluateSmartPowerClock()
+        _optimizerStatusMessage.value = "Triggered Smart Power Scheduling Worker check."
+    }
+
+    // --- Real-time CPU Telemetry sync for Secondary Home Screen Widget ---
+    fun updateLiveCpuTelemetry(cpuPct: Float, avgMhz: Int) {
+        val clamped = cpuPct.coerceIn(5f, 100f)
+        _cpuUsagePercent.value = clamped
+        _cpuAvgMhz.value = avgMhz
+        _cpuHistory.value = (_cpuHistory.value + clamped).takeLast(12)
+        com.example.widget.LiveCpuUsageWidgetProvider.updateAllWidgets(
+            getApplication(),
+            clamped.toInt(),
+            avgMhz
+        )
+    }
+
+    // --- High-Risk Permission Manager Handlers ---
+    fun scanHighRiskPermissions() {
+        viewModelScope.launch {
+            _isScanningPermissions.value = true
+            val scanned = repository.scanHighRiskAppPermissions(revokedPermissionPackages.toSet())
+            _highRiskAppPermissions.value = scanned
+            _isScanningPermissions.value = false
+        }
+    }
+
+    fun revokeHighRiskPermission(app: com.example.data.repository.HighRiskAppPermission) {
+        revokedPermissionPackages.add(app.packageName)
+        _highRiskAppPermissions.value = _highRiskAppPermissions.value.map { item ->
+            if (item.packageName == app.packageName) {
+                item.copy(
+                    isRevokedLocally = true,
+                    permissions = item.permissions.map { it.copy(isGranted = false) }
+                )
+            } else {
+                item
+            }
+        }
+        val permSummary = app.permissions.joinToString(", ") { it.label }
+        _optimizerStatusMessage.value = "Revoked high-risk permissions for ${app.appName} ($permSummary)."
+        viewModelScope.launch {
+            repository.insertLog(
+                type = "PERMISSION_AUDIT",
+                description = "Revoked high-risk permissions for ${app.appName}: $permSummary",
+                detailsMap = mapOf(
+                    "package" to app.packageName,
+                    "risk_level" to app.riskLevel,
+                    "permissions" to permSummary
+                )
+            )
+        }
+    }
+
+    // --- 7-Day Hardware Performance Trends ---
+    fun refresh7DayHardwareTrends() {
+        viewModelScope.launch {
+            val trends = repository.get7DayHardwareTrends(
+                liveCpuPct = _cpuUsagePercent.value,
+                liveRamPct = _ramUsagePercent.value.toInt(),
+                liveTempC = _batteryInfo.value.temperatureCelsius,
+                logs = activityLogs.value
+            )
+            _hardware7DayTrends.value = trends
+        }
+    }
+
+    // --- CSV & PDF Hardware Performance Report Exporters ---
+    fun exportHardwareReportCsv(
+        context: android.content.Context,
+        onDone: (com.example.util.ReportExportResult?) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isExportingCsv.value = true
+            try {
+                val trends = _hardware7DayTrends.value.ifEmpty {
+                    repository.get7DayHardwareTrends(
+                        liveCpuPct = _cpuUsagePercent.value,
+                        liveRamPct = _ramUsagePercent.value.toInt(),
+                        liveTempC = _batteryInfo.value.temperatureCelsius,
+                        logs = activityLogs.value
+                    )
+                }
+                val result = withContext(Dispatchers.IO) {
+                    com.example.util.HardwareReportExporter.exportCsvReport(
+                        context = context,
+                        battery = _batteryInfo.value,
+                        storage = _storageInfo.value,
+                        cpuUsagePercent = _cpuUsagePercent.value,
+                        ramUsagePercent = _ramUsagePercent.value.toInt(),
+                        isPowerSavingMode = _isPowerSavingMode.value,
+                        trends = trends,
+                        logs = activityLogs.value
+                    )
+                }
+                _lastReportExport.value = result
+                repository.insertLog(
+                    type = "DIAGNOSTICS_EXPORT",
+                    description = "Exported hardware performance logs & 7-day trends to CSV (${result.fileName})",
+                    detailsMap = mapOf("format" to "CSV", "path" to result.publicDisplayPath)
+                )
+                _optimizerStatusMessage.value = "Saved CSV report: ${result.fileName}"
+                onDone(result)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onDone(null)
+            } finally {
+                _isExportingCsv.value = false
+            }
+        }
+    }
+
+    fun exportHardwareReportPdf(
+        context: android.content.Context,
+        onDone: (com.example.util.ReportExportResult?) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            _isExportingPdf.value = true
+            try {
+                val trends = _hardware7DayTrends.value.ifEmpty {
+                    repository.get7DayHardwareTrends(
+                        liveCpuPct = _cpuUsagePercent.value,
+                        liveRamPct = _ramUsagePercent.value.toInt(),
+                        liveTempC = _batteryInfo.value.temperatureCelsius,
+                        logs = activityLogs.value
+                    )
+                }
+                val result = withContext(Dispatchers.IO) {
+                    com.example.util.HardwareReportExporter.exportPdfReport(
+                        context = context,
+                        battery = _batteryInfo.value,
+                        storage = _storageInfo.value,
+                        cpuUsagePercent = _cpuUsagePercent.value,
+                        ramUsagePercent = _ramUsagePercent.value.toInt(),
+                        isPowerSavingMode = _isPowerSavingMode.value,
+                        trends = trends,
+                        logs = activityLogs.value
+                    )
+                }
+                _lastReportExport.value = result
+                repository.insertLog(
+                    type = "DIAGNOSTICS_EXPORT",
+                    description = "Exported hardware performance logs & 7-day trend report to PDF (${result.fileName})",
+                    detailsMap = mapOf("format" to "PDF", "path" to result.publicDisplayPath)
+                )
+                _optimizerStatusMessage.value = "Saved PDF report: ${result.fileName}"
+                onDone(result)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onDone(null)
+            } finally {
+                _isExportingPdf.value = false
+            }
+        }
+    }
+
+    fun dismissReportExportBanner() {
+        _lastReportExport.value = null
+    }
+
+    private fun setPowerSavingMode(enabled: Boolean, reason: String? = null) {
+        _isPowerSavingMode.value = enabled
+        prefs.edit().putBoolean(com.example.widget.Live3GBatteryWidgetProvider.KEY_POWER_SAVING_MODE, enabled).apply()
+        if (enabled) {
+            val suffix = if (reason != null) " ($reason)" else ""
+            _optimizerStatusMessage.value = "Power-Saving Mode Enabled$suffix: Throttle core clocks to conserve energy & secure silicon longevity."
             _batteryInfo.value = _batteryInfo.value.copy(
                 health = "Eco Optimized",
                 percentage = _batteryInfo.value.percentage.coerceAtLeast(15)
             )
+            _dynamicPowerSuggestion.value = null
         } else {
             _optimizerStatusMessage.value = "High-Performance Mode Enabled: 8 Cores unlocked. Max FPS enabled for intense workloads."
             _batteryInfo.value = _batteryInfo.value.copy(
                 health = "High Capacity",
                 percentage = _batteryInfo.value.percentage.coerceAtLeast(20)
             )
+            viewModelScope.launch { evaluateAlerts() }
         }
+        com.example.widget.Live3GBatteryWidgetProvider.updateAllWidgets(getApplication())
+        com.example.widget.GlanceBatteryWidgetHelper.updateAll(getApplication())
+    }
+
+    fun togglePowerSavingMode() {
+        setPowerSavingMode(enabled = !_isPowerSavingMode.value)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        prefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
     }
 
     fun toggleSentinelFloatingButton() {
@@ -1063,64 +1681,78 @@ class OptimiserViewModel(application: Application) : AndroidViewModel(applicatio
                 val ramPercent = _ramUsagePercent.value
                 val isPowerSave = _isPowerSavingMode.value
                 val logsList = activityLogs.value
-                
-                // 2. Format a comprehensive nested JSON Map
-                val metadata = mapOf(
-                    "export_timestamp" to System.currentTimeMillis(),
-                    "export_date" to java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date()),
-                    "device" to "Nothing Phone A015",
-                    "diagnostics_version" to "v2.0"
-                )
-                
-                val hardware = mapOf(
-                    "cpu_temperature_celsius" to battery.temperatureCelsius,
-                    "ram_usage_percent" to ramPercent,
-                    "storage_total_mb" to storage.totalMB,
-                    "storage_used_mb" to storage.usedMB,
-                    "storage_junk_mb" to storage.junkMB,
-                    "battery_percentage" to battery.percentage,
-                    "battery_health" to battery.health,
-                    "power_saving_mode" to isPowerSave
-                )
-                
-                // Format logs list
-                val logsFormatted = logsList.map { log ->
-                    mapOf(
-                        "id" to log.id,
-                        "timestamp" to log.timestamp,
-                        "time_formatted" to java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp)),
-                        "activity_type" to log.activityType,
-                        "description" to log.description
+
+                val (file, jsonString) = withContext(Dispatchers.IO) {
+                    val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+
+                    // 2. Format a comprehensive nested JSON Map
+                    val metadata = mapOf(
+                        "export_timestamp" to System.currentTimeMillis(),
+                        "export_date" to dateFormat.format(java.util.Date()),
+                        "device" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
+                        "diagnostics_version" to "v2.0"
                     )
+
+                    val hardware = mapOf(
+                        "cpu_temperature_celsius" to battery.temperatureCelsius,
+                        "ram_usage_percent" to ramPercent,
+                        "storage_total_mb" to storage.totalMB,
+                        "storage_used_mb" to storage.usedMB,
+                        "storage_junk_mb" to storage.junkMB,
+                        "battery_percentage" to battery.percentage,
+                        "battery_health" to battery.health,
+                        "power_saving_mode" to isPowerSave
+                    )
+
+                    // Format logs list
+                    val logsFormatted = logsList.map { log ->
+                        mapOf(
+                            "id" to log.id,
+                            "timestamp" to log.timestamp,
+                            "time_formatted" to dateFormat.format(java.util.Date(log.timestamp)),
+                            "activity_type" to log.activityType,
+                            "description" to log.description
+                        )
+                    }
+
+                    val rootMap = mapOf(
+                        "metadata" to metadata,
+                        "hardware_monitoring_statistics" to hardware,
+                        "cleanup_history" to logsFormatted
+                    )
+
+                    // Convert to formatted JSON string using Moshi
+                    val type = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
+                    val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+                    val formattedJson = moshi.adapter<Map<String, Any>>(type).indent("  ").toJson(rootMap) ?: "{}"
+
+                    // 3. Write to a file in external Downloads directory (or internal filesDir fallback)
+                    val downloadsDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
+                        ?: context.filesDir
+                    if (!downloadsDir.exists()) {
+                        downloadsDir.mkdirs()
+                    }
+                    val targetFile = java.io.File(downloadsDir, "optimiser_diagnostics_export.json")
+                    targetFile.writeText(formattedJson)
+
+                    // Maintain log of this action
+                    repository.insertLog(
+                        type = "DIAGNOSTICS_EXPORT",
+                        description = "Exported system diagnostics and ${logsFormatted.size} history logs to physical JSON file",
+                        detailsMap = mapOf("file_path" to targetFile.absolutePath)
+                    )
+
+                    Pair(targetFile, formattedJson)
                 }
-                
-                val rootMap = mapOf(
-                    "metadata" to metadata,
-                    "hardware_monitoring_statistics" to hardware,
-                    "cleanup_history" to logsFormatted
-                )
-                
-                // Convert to beautifully formatted JSON string using Moshi
-                val type = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
-                val moshi = com.squareup.moshi.Moshi.Builder().addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
-                val jsonString = moshi.adapter<Map<String, Any>>(type).indent("  ").toJson(rootMap) ?: "{}"
-                
-                // 3. Write to a file in standard external Downloads directory
-                val downloadsDir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS)
-                val file = java.io.File(downloadsDir, "optimiser_diagnostics_export.json")
-                file.writeText(jsonString)
-                
-                // Maintain log of this action
-                repository.insertLog(
-                    type = "DIAGNOSTICS_EXPORT",
-                    description = "Exported system diagnostics and ${logsFormatted.size} history logs to physical JSON file",
-                    detailsMap = mapOf("file_path" to file.absolutePath)
-                )
-                
-                onDone(file, jsonString)
+
+                withContext(Dispatchers.Main) {
+                    onDone(file, jsonString)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                onDone(null, "")
+                withContext(Dispatchers.Main) {
+                    onDone(null, "")
+                }
             }
         }
     }

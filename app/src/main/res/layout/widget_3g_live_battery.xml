@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_3g_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_3g_bg_cyber"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <!-- Top Telemetry Header Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_3g_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.12"
+            android:text="● 3G LIVE // POWER CORE"
+            android:textColor="#FF00E5FF"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_3g_status_chip"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fontFamily="monospace"
+            android:gravity="end"
+            android:text="ECO GUARD"
+            android:textColor="#FF00FF88"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Middle Battery Percentage & Quick Enable Saver Toggle -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_3g_battery_percent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="88%"
+                android:textColor="#FFFFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_3g_battery_subtext"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="LIVE CELL • 31.5°C"
+                android:textColor="#B3B8D4E8"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_3g_saver_toggle_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:background="@drawable/widget_3g_toggle_off"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:minWidth="126dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:text="@string/widget_3g_enable_saver"
+            android:textColor="#FF00E5FF"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Neon Energy Progress Bar -->
+    <ProgressBar
+        android:id="@+id/widget_3g_battery_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:layout_marginTop="8dp"
+        android:max="100"
+        android:progress="88"
+        android:progressDrawable="@drawable/widget_3g_progress_bar" />
+
+</LinearLayout>

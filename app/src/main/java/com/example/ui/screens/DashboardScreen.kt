@@ -84,11 +84,31 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.BackgroundApp
 import com.example.viewmodel.OptimiserViewModel
+import android.app.TimePickerDialog
+import android.os.Build
+import android.view.HapticFeedbackConstants
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import com.example.ui.components.AppBatteryDrainHibernationCard
+import com.example.ui.components.DetailedBatteryHealthPanel
+import com.example.ui.components.DynamicPowerProfileSuggestionBanner
+import com.example.ui.components.Live3GBatteryWidgetCard
+import com.example.ui.components.PermissionManagerPanel
+import com.example.worker.JunkCleanupPrefs
+import com.example.worker.JunkCleanupScheduler
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
 fun DashboardScreen(
     viewModel: OptimiserViewModel,
+    onNavigateToLogs: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val storage by viewModel.storageInfo.collectAsState()
@@ -106,6 +126,26 @@ fun DashboardScreen(
     val auditResult by viewModel.auditResult.collectAsState()
     val isAuditing by viewModel.isAuditing.collectAsState()
     val logs by viewModel.activityLogs.collectAsState()
+
+    // Persisted safe manual junk checkboxes & daily WorkManager schedule
+    val tickSysCache by viewModel.tickSysCache.collectAsState()
+    val tickObsoleteLogs by viewModel.tickObsoleteLogs.collectAsState()
+    val tickApkRemnants by viewModel.tickApkRemnants.collectAsState()
+    val tickTempThumbnails by viewModel.tickTempThumbnails.collectAsState()
+    val isScheduledJunkCleanEnabled by viewModel.isScheduledJunkCleanEnabled.collectAsState()
+    val scheduledCleanHour by viewModel.scheduledCleanHour.collectAsState()
+    val scheduledCleanMinute by viewModel.scheduledCleanMinute.collectAsState()
+    val lastScheduledCleanSummary by viewModel.lastScheduledCleanSummary.collectAsState()
+
+    // Dynamic Power Profiles & App Battery Drain Hibernation states
+    val isDynamicProfilesEnabled by viewModel.isDynamicProfilesEnabled.collectAsState()
+    val dynamicPowerSuggestion by viewModel.dynamicPowerSuggestion.collectAsState()
+    val drainScanResults by viewModel.drainScanResults.collectAsState()
+    val isScanningAppDrain by viewModel.isScanningAppDrain.collectAsState()
+    val isBgDrainScannerEnabled by viewModel.isBgDrainScannerEnabled.collectAsState()
+    val lastBgDrainScanSummary by viewModel.lastBgDrainScanSummary.collectAsState()
+    val highRiskAppPermissions by viewModel.highRiskAppPermissions.collectAsState()
+    val isScanningPermissions by viewModel.isScanningPermissions.collectAsState()
 
     // Color schema adaptive to High Contrast accessibility modifier
     val activeBgColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background
@@ -162,8 +202,21 @@ fun DashboardScreen(
 
         // Warning alerts list
         item {
-            AnimatedVisibility(visible = thermalAlert != null || batteryAlert != null || showJunkNotificationPrompt) {
+            AnimatedVisibility(
+                visible = thermalAlert != null ||
+                    batteryAlert != null ||
+                    showJunkNotificationPrompt ||
+                    dynamicPowerSuggestion != null
+            ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    dynamicPowerSuggestion?.let { suggestion ->
+                        DynamicPowerProfileSuggestionBanner(
+                            suggestion = suggestion,
+                            isHighContrast = isHighContrast,
+                            onAccept = { viewModel.acceptDynamicPowerSuggestion() },
+                            onDismiss = { viewModel.dismissDynamicPowerSuggestion() }
+                        )
+                    }
                     thermalAlert?.let {
                         AlertCard(
                             message = it,
@@ -247,9 +300,21 @@ fun DashboardScreen(
             }
         }
 
-        // QUICK-ACCESS OPERATIONS BAR
+        // QUICK-ACCESS OPERATIONS BAR (with System Haptic Feedback)
         item {
             val context = LocalContext.current
+            val haptic = LocalHapticFeedback.current
+            val view = LocalView.current
+
+            fun performActionHaptic(isConfirm: Boolean = false) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                if (isConfirm && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                } else {
+                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                }
+            }
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -265,16 +330,30 @@ fun DashboardScreen(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "QUICK-ACCESS ACTIONS",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = activeTextColor,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "QUICK-ACCESS ACTIONS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = activeTextColor,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Text(
+                            text = "HAPTIC ENABLED",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = activeSubTextColor,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -283,7 +362,9 @@ fun DashboardScreen(
                         // Clear RAM Button
                         Button(
                             onClick = {
+                                performActionHaptic(isConfirm = false)
                                 viewModel.clearRam {
+                                    performActionHaptic(isConfirm = true)
                                     Toast.makeText(context, "RAM quick-cleared successfully!", Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -291,12 +372,12 @@ fun DashboardScreen(
                                 containerColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                                 contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.primary
                             ),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(48.dp)
                                 .testTag("dashboard_quick_clear_ram"),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Memory,
@@ -310,6 +391,7 @@ fun DashboardScreen(
                         // Battery Saver Button
                         Button(
                             onClick = {
+                                performActionHaptic(isConfirm = true)
                                 viewModel.togglePowerSavingMode()
                                 Toast.makeText(context, "Battery Saver mode toggled!", Toast.LENGTH_SHORT).show()
                             },
@@ -317,12 +399,12 @@ fun DashboardScreen(
                                 containerColor = if (isHighContrast) Color.White else (if (isPowerSavingMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
                                 contentColor = if (isHighContrast) Color.Black else (if (isPowerSavingMode) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
                             ),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(48.dp)
                                 .testTag("dashboard_quick_battery_saver"),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.BatterySaver,
@@ -336,7 +418,9 @@ fun DashboardScreen(
                         // Deep Clean Button
                         Button(
                             onClick = {
+                                performActionHaptic(isConfirm = false)
                                 viewModel.cleanJunkFiles {
+                                    performActionHaptic(isConfirm = true)
                                     Toast.makeText(context, "System junk cache deep-cleaned successfully!", Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -344,12 +428,12 @@ fun DashboardScreen(
                                 containerColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                                 contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.primary
                             ),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(44.dp)
+                                .height(48.dp)
                                 .testTag("dashboard_quick_deep_clean"),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CleaningServices,
@@ -364,13 +448,51 @@ fun DashboardScreen(
             }
         }
 
+        // FUTURISTIC 3G LIVE BATTERY & QUICK SAVER WIDGET
+        item {
+            Live3GBatteryWidgetCard(
+                batteryPercentage = battery.percentage,
+                temperatureCelsius = battery.temperatureCelsius,
+                isCharging = battery.isCharging,
+                isPowerSavingMode = isPowerSavingMode,
+                isHighContrast = isHighContrast,
+                onToggleSaver = { viewModel.togglePowerSavingMode() },
+                showPinAction = true
+            )
+        }
+
         // REAL-TIME SYSTEM ACTIVITY LOG VIEWER WIDGET
         item {
             var selectedFilterType by remember { mutableStateOf("ALL") } // ALL, USER, AI
+            val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+            val aiActivityTypes = remember {
+                setOf(
+                    "AUDIT",
+                    "JAMUN_REPAIR",
+                    "SENTINEL_FIX",
+                    "SENTINEL_ALERT",
+                    "AGENT_LEARNING",
+                    "AGENT_HEALING",
+                    "SKILL_ADDED",
+                    "SKILL_UPGRADED",
+                    "MEMORY_REGISTERED",
+                    "MEMORY_PURGED",
+                    "MONITOR",
+                    "THERMAL_CALIB"
+                )
+            }
+            fun isAiEntry(type: String, description: String): Boolean {
+                return type.uppercase(Locale.ROOT) in aiActivityTypes ||
+                    description.contains("AI", ignoreCase = true) ||
+                    description.contains("Jamun", ignoreCase = true) ||
+                    description.contains("Sentinel", ignoreCase = true) ||
+                    description.contains("Agent", ignoreCase = true)
+            }
+
             val filteredLogs = remember(logs, selectedFilterType) {
                 when (selectedFilterType) {
-                    "USER" -> logs.filter { it.activityType != "AUDIT" && !it.description.contains("AI", ignoreCase = true) }
-                    "AI" -> logs.filter { it.activityType == "AUDIT" || it.description.contains("AI", ignoreCase = true) }
+                    "USER" -> logs.filter { !isAiEntry(it.activityType, it.description) }
+                    "AI" -> logs.filter { isAiEntry(it.activityType, it.description) }
                     else -> logs
                 }.take(5)
             }
@@ -395,26 +517,32 @@ fun DashboardScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.History,
-                                contentDescription = "",
+                                contentDescription = "Real-time activity logs",
                                 tint = activeTextColor,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "REAL-TIME ACTIVITY LOGS",
+                                text = "ACTIVITY LOGS (${logs.size})",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = activeTextColor,
                                 fontFamily = FontFamily.Monospace,
-                                letterSpacing = 1.sp
+                                letterSpacing = 0.8.sp
                             )
                         }
 
                         // Filter selectors row
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             listOf("ALL", "USER", "AI").forEach { type ->
                                 val isSelected = selectedFilterType == type
                                 val tagBg = if (isSelected) {
@@ -430,21 +558,27 @@ fun DashboardScreen(
 
                                 Box(
                                     modifier = Modifier
-                                        .background(tagBg, RoundedCornerShape(4.dp))
+                                        .minimumInteractiveComponentSize()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(tagBg, RoundedCornerShape(6.dp))
                                         .border(
-                                            1.dp, 
-                                            if (isHighContrast || isSelected) Color.White else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), 
-                                            RoundedCornerShape(4.dp)
+                                            1.dp,
+                                            if (isHighContrast || isSelected) {
+                                                if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                            },
+                                            RoundedCornerShape(6.dp)
                                         )
                                         .clickable { selectedFilterType = type }
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                         .testTag("log_filter_$type"),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = type, 
-                                        fontSize = 8.sp, 
-                                        fontWeight = FontWeight.Bold, 
+                                        text = type,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
                                         color = tagText
                                     )
                                 }
@@ -452,19 +586,32 @@ fun DashboardScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     if (filteredLogs.isEmpty()) {
-                        Text(
-                            text = "No recorded logs match this filter category yet.",
-                            fontSize = 11.sp,
-                            color = activeSubTextColor,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "No logs",
+                                tint = activeSubTextColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "No recorded logs match '$selectedFilterType' yet. Run a scan, cleanup, or AI audit to populate live activity.",
+                                fontSize = 11.sp,
+                                color = activeSubTextColor
+                            )
+                        }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             filteredLogs.forEach { log ->
-                                val isAiLog = log.activityType == "AUDIT" || log.description.contains("AI", ignoreCase = true)
+                                val isAiLog = isAiEntry(log.activityType, log.description)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -482,7 +629,7 @@ fun DashboardScreen(
                                 ) {
                                     Icon(
                                         imageVector = if (isAiLog) Icons.Default.AutoAwesome else Icons.Default.Done,
-                                        contentDescription = if (isAiLog) "AI Suggestion" else "User Action",
+                                        contentDescription = if (isAiLog) "AI Action" else "User Action",
                                         tint = if (isAiLog) Color(0xFF81D4FA) else Color(0xFFC5E1A5),
                                         modifier = Modifier.size(14.dp)
                                     )
@@ -504,7 +651,7 @@ fun DashboardScreen(
                                                 color = activeSubTextColor
                                             )
                                             Text(
-                                                text = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp)),
+                                                text = timeFormatter.format(Date(log.timestamp)),
                                                 fontSize = 8.sp,
                                                 color = activeSubTextColor
                                             )
@@ -512,6 +659,25 @@ fun DashboardScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = onNavigateToLogs,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.testTag("dashboard_view_all_logs_button")
+                        ) {
+                            Text(
+                                text = "VIEW FULL HISTORY & BACKUPS →",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isHighContrast) Color.Yellow else MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
@@ -830,20 +996,109 @@ fun DashboardScreen(
                             )
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Detailed Battery Health Status Display (Cycle Count & Estimated Lifespan)
+                    DetailedBatteryHealthPanel(
+                        battery = battery,
+                        isHighContrast = isHighContrast,
+                        activeTextColor = activeTextColor,
+                        activeSubTextColor = activeSubTextColor
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Dynamic Power Profiles Auto-Suggestion Toggle
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "DYNAMIC POWER PROFILES",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = activeTextColor
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Auto-suggest Power Saving Mode when battery < 20% or hardware monitor detects temp >= 38.5°C.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = activeSubTextColor
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = isDynamicProfilesEnabled,
+                            onCheckedChange = { viewModel.toggleDynamicPowerProfiles(it) },
+                            modifier = Modifier.testTag("dynamic_power_profiles_switch")
+                        )
+                    }
                 }
             }
         }
 
-        // ----------------- JUNK FILES CLEANUP SIMULATION -----------------
+        // ----------------- APP BATTERY DRAIN SCANNER & HIBERNATION -----------------
         item {
-            var selectedSysCache by remember { mutableStateOf(true) }
-            var selectedLogs by remember { mutableStateOf(true) }
-            var selectedApkRemnants by remember { mutableStateOf(false) }
+            AppBatteryDrainHibernationCard(
+                candidates = drainScanResults,
+                isScanning = isScanningAppDrain,
+                isHighContrast = isHighContrast,
+                activeCardBgColor = activeCardBgColor,
+                activeBorderColor = activeBorderColor,
+                activeTextColor = activeTextColor,
+                activeSubTextColor = activeSubTextColor,
+                onScanApps = { viewModel.triggerBgDrainScanNow() },
+                onHibernateApp = { packageName -> viewModel.hibernateDrainingApp(packageName) },
+                onHibernateAll = { viewModel.hibernateAllDrainingApps() },
+                isBgScannerEnabled = isBgDrainScannerEnabled,
+                lastBgScanSummary = lastBgDrainScanSummary,
+                onToggleBgScanner = { viewModel.toggleBgDrainScanner(it) }
+            )
+        }
+
+        // ----------------- HIGH-RISK PERMISSION MANAGER -----------------
+        item {
+            PermissionManagerPanel(
+                apps = highRiskAppPermissions,
+                isScanning = isScanningPermissions,
+                isHighContrast = isHighContrast,
+                activeCardBgColor = activeCardBgColor,
+                activeBorderColor = activeBorderColor,
+                activeTextColor = activeTextColor,
+                activeSubTextColor = activeSubTextColor,
+                onScanPermissions = { viewModel.scanHighRiskPermissions() },
+                onRevokePermission = { app -> viewModel.revokeHighRiskPermission(app) },
+                maxVisibleItems = 6
+            )
+        }
+
+        // ----------------- JUNK FILES CLEANUP & SCHEDULED SAFE WORKER -----------------
+        item {
+            val context = LocalContext.current
+            val haptic = LocalHapticFeedback.current
+            val view = LocalView.current
 
             var simulationProgress by remember { mutableStateOf(0f) }
             var activePhase by remember { mutableStateOf("") }
             var isSimRunning by remember { mutableStateOf(false) }
             val coroutineScope = rememberCoroutineScope()
+
+            val tickedCount = listOf(tickSysCache, tickObsoleteLogs, tickApkRemnants, tickTempThumbnails).count { it }
+            val formattedScheduleTime = JunkCleanupScheduler.formatTime12Hour(scheduledCleanHour, scheduledCleanMinute)
+            val nextRunText = JunkCleanupScheduler.getNextRunDescription(scheduledCleanHour, scheduledCleanMinute)
 
             Card(
                 modifier = Modifier
@@ -860,13 +1115,13 @@ fun DashboardScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.CleaningServices,
-                            contentDescription = "Junk Cleanup Simulator",
+                            contentDescription = "Safe Junk File Cleanup",
                             tint = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "JUNK CACHE LAB SIMULATOR",
+                            text = "SAFE JUNK FILE CLEANUP & SCHEDULER",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp),
                             color = activeTextColor
                         )
@@ -875,24 +1130,34 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Configure monitored directories. Check targeted cache directories to simulate detailed files sweep.",
+                        text = "Manually tick the safe junk categories below. Both manual cleanup and the recurring background worker will ONLY clean your ticked categories.",
                         style = MaterialTheme.typography.bodySmall,
                         color = activeSubTextColor
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Category Checklist
+                    // Persisted Safe Manual Category Checklist
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { if (!isSimRunning) selectedSysCache = !selectedSysCache }
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isSimRunning) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_SYS_CACHE, !tickSysCache)
+                                }
+                                .testTag("junk_checkbox_sys_cache")
                         ) {
                             Checkbox(
-                                checked = selectedSysCache,
-                                onCheckedChange = { if (!isSimRunning) selectedSysCache = it },
+                                checked = tickSysCache,
+                                onCheckedChange = {
+                                    if (!isSimRunning) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_SYS_CACHE, it)
+                                    }
+                                },
                                 enabled = !isSimRunning,
                                 colors = CheckboxDefaults.colors(
                                     checkedColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
@@ -901,7 +1166,7 @@ fun DashboardScreen(
                             )
                             Column {
                                 Text("System App Cache", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = activeTextColor)
-                                Text("Temp variables & UI icons: ~142 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
+                                Text("Temp variables & UI cache: ~142 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
                             }
                         }
 
@@ -909,11 +1174,21 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { if (!isSimRunning) selectedLogs = !selectedLogs }
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isSimRunning) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_OBSOLETE_LOGS, !tickObsoleteLogs)
+                                }
+                                .testTag("junk_checkbox_obsolete_logs")
                         ) {
                             Checkbox(
-                                checked = selectedLogs,
-                                onCheckedChange = { if (!isSimRunning) selectedLogs = it },
+                                checked = tickObsoleteLogs,
+                                onCheckedChange = {
+                                    if (!isSimRunning) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_OBSOLETE_LOGS, it)
+                                    }
+                                },
                                 enabled = !isSimRunning,
                                 colors = CheckboxDefaults.colors(
                                     checkedColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
@@ -922,7 +1197,7 @@ fun DashboardScreen(
                             )
                             Column {
                                 Text("Obsolete Sentinel Logs", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = activeTextColor)
-                                Text("Older crash dumps & audits: ~68 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
+                                Text("Older crash dumps & diagnostic audits: ~68 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
                             }
                         }
 
@@ -930,11 +1205,21 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { if (!isSimRunning) selectedApkRemnants = !selectedApkRemnants }
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isSimRunning) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_APK_REMNANTS, !tickApkRemnants)
+                                }
+                                .testTag("junk_checkbox_apk_remnants")
                         ) {
                             Checkbox(
-                                checked = selectedApkRemnants,
-                                onCheckedChange = { if (!isSimRunning) selectedApkRemnants = it },
+                                checked = tickApkRemnants,
+                                onCheckedChange = {
+                                    if (!isSimRunning) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_APK_REMNANTS, it)
+                                    }
+                                },
                                 enabled = !isSimRunning,
                                 colors = CheckboxDefaults.colors(
                                     checkedColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
@@ -946,6 +1231,270 @@ fun DashboardScreen(
                                 Text("Expired update packages: ~118 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
                             }
                         }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(enabled = !isSimRunning) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_TEMP_THUMBNAILS, !tickTempThumbnails)
+                                }
+                                .testTag("junk_checkbox_temp_thumbnails")
+                        ) {
+                            Checkbox(
+                                checked = tickTempThumbnails,
+                                onCheckedChange = {
+                                    if (!isSimRunning) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.setJunkCategoryTicked(JunkCleanupPrefs.KEY_TICK_TEMP_THUMBNAILS, it)
+                                    }
+                                },
+                                enabled = !isSimRunning,
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                                    checkmarkColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
+                            Column {
+                                Text("Temp Thumbnails & Cache", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = activeTextColor)
+                                Text("Safe temporary preview & ad buffers: ~54 MB", style = MaterialTheme.typography.labelSmall, color = activeSubTextColor)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // --- RECURRING BACKGROUND WORKMANAGER SCHEDULE PANEL ---
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp)
+                            .testTag("scheduled_junk_clean_panel")
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Schedule,
+                                    contentDescription = "Scheduled Background Cleanup",
+                                    tint = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "AUTO-CLEAN SCHEDULE (DAILY)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = activeTextColor
+                                    )
+                                    Text(
+                                        text = if (isScheduledJunkCleanEnabled) {
+                                            "Active • $nextRunText ($tickedCount ticked)"
+                                        } else {
+                                            "Background worker paused • Set daily time"
+                                        },
+                                        fontSize = 10.sp,
+                                        color = activeSubTextColor
+                                    )
+                                }
+                            }
+
+                            Switch(
+                                checked = isScheduledJunkCleanEnabled,
+                                onCheckedChange = { enabled ->
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (enabled && tickedCount == 0) {
+                                        Toast.makeText(
+                                            context,
+                                            "Tick at least one safe junk category first!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    } else {
+                                        viewModel.toggleScheduledJunkClean(enabled)
+                                        Toast.makeText(
+                                            context,
+                                            if (enabled) "Daily auto-clean scheduled at $formattedScheduleTime" else "Scheduled auto-clean disabled",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                modifier = Modifier.testTag("scheduled_junk_clean_switch")
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Custom Time Picker Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Scheduled Clean Time",
+                                    fontSize = 10.sp,
+                                    color = activeSubTextColor
+                                )
+                                Text(
+                                    text = formattedScheduleTime,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (isHighContrast) Color.Yellow else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.testTag("scheduled_junk_time_text")
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    TimePickerDialog(
+                                        context,
+                                        { _, pickedHour, pickedMinute ->
+                                            viewModel.updateScheduledCleanTime(pickedHour, pickedMinute)
+                                            val newLabel = JunkCleanupScheduler.formatTime12Hour(pickedHour, pickedMinute)
+                                            Toast.makeText(context, "Auto-clean time set to $newLabel", Toast.LENGTH_SHORT).show()
+                                        },
+                                        scheduledCleanHour,
+                                        scheduledCleanMinute,
+                                        false
+                                    ).show()
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .height(48.dp)
+                                    .testTag("scheduled_junk_time_picker_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Schedule,
+                                    contentDescription = "Choose Clean Time",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("SET TIME", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Quick Preset Time Chips (including 3:00 AM default)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val presets = listOf(
+                                Triple("2:00 AM", 2, 0),
+                                Triple("3:00 AM", 3, 0),
+                                Triple("4:00 AM", 4, 0),
+                                Triple("11:30 PM", 23, 30)
+                            )
+                            presets.forEach { (label, h, m) ->
+                                val isSelected = scheduledCleanHour == h && scheduledCleanMinute == m
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .minimumInteractiveComponentSize()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSelected) {
+                                                if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                Color.Transparent
+                                            }
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) {
+                                                if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                            },
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            viewModel.updateScheduledCleanTime(h, m)
+                                        }
+                                        .padding(vertical = 6.dp)
+                                        .testTag("preset_time_${h}_${m}"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) {
+                                            if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            activeTextColor
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Last run: $lastScheduledCleanSummary",
+                                fontSize = 10.sp,
+                                color = activeSubTextColor,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            TextButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                                    }
+                                    viewModel.triggerScheduledWorkerNow()
+                                    Toast.makeText(
+                                        context,
+                                        "Background safe cleanup worker queued now!",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("run_scheduled_worker_now_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Run Worker Now",
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text("RUN WORKER", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -953,7 +1502,7 @@ fun DashboardScreen(
                     if (isSimRunning) {
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = "Simulator status: $activePhase (${simulationProgress.toInt()}%)",
+                                text = "Safe sweep status: $activePhase (${simulationProgress.toInt()}%)",
                                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                                 color = activeTextColor
                             )
@@ -971,22 +1520,32 @@ fun DashboardScreen(
                     } else {
                         Button(
                             onClick = {
-                                isSimRunning = true
-                                coroutineScope.launch {
-                                    activePhase = "Allocating paths..."
-                                    for (i in 0..100 step 20) {
-                                        simulationProgress = i.toFloat()
-                                        if (i == 40) activePhase = "Clearing caches..."
-                                        if (i == 80) activePhase = "Flushing indexes..."
-                                        delay(400)
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                if (tickedCount == 0) {
+                                    Toast.makeText(context, "Please tick at least one safe junk category.", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    isSimRunning = true
+                                    coroutineScope.launch {
+                                        activePhase = "Scanning $tickedCount ticked categories..."
+                                        for (i in 0..100 step 20) {
+                                            simulationProgress = i.toFloat()
+                                            if (i == 40) activePhase = "Safely clearing ticked caches..."
+                                            if (i == 80) activePhase = "Verifying storage integrity..."
+                                            delay(350)
+                                        }
+                                        isSimRunning = false
+                                        viewModel.cleanJunkFiles {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                                view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                                            }
+                                            Toast.makeText(context, "Cleaned $tickedCount ticked safe categories!", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
-                                    isSimRunning = false
-                                    viewModel.cleanJunkFiles()
                                 }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(46.dp)
+                                .height(48.dp)
                                 .testTag("simulate_cache_clean_button"),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -997,7 +1556,7 @@ fun DashboardScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("SIMULATE DIRECT CLEARANCE", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("CLEAN $tickedCount TICKED SAFE CATEGORIES NOW", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

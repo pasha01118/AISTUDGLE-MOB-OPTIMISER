@@ -30,6 +30,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.api.GenericAiClient
+import com.example.ui.components.GlanceBatteryWidgetPreviewCard
+import com.example.ui.components.Live3GBatteryWidgetCard
+import com.example.ui.components.LiveCpuWidgetCard
 import com.example.viewmodel.ChatMessage
 import com.example.viewmodel.OptimiserViewModel
 import kotlinx.coroutines.delay
@@ -70,6 +73,10 @@ fun WidgetsScreen(
     val isDark by viewModel.isDarkTheme.collectAsState()
     val batteryInfo by viewModel.batteryInfo.collectAsState()
     val storageInfo by viewModel.storageInfo.collectAsState()
+    val isPowerSavingMode by viewModel.isPowerSavingMode.collectAsState()
+    val cpuUsagePercent by viewModel.cpuUsagePercent.collectAsState()
+    val cpuAvgMhz by viewModel.cpuAvgMhz.collectAsState()
+    val cpuHistory by viewModel.cpuHistory.collectAsState()
 
     // Screen-level local FAQs expanding states
     var isUpdateFaqExpanded by remember { mutableStateOf(false) }
@@ -618,6 +625,44 @@ fun WidgetsScreen(
         }
 
         // ================= WIDGET PREVIEW AND SENSORS GENERATION LIST =================
+
+        // 0A. Jetpack Compose Glance Real-Time Battery & One-Tap Saver Widget (4x2)
+        item {
+            WidgetGroupHeader("Compose Glance Battery Saver (4×2)")
+            GlanceBatteryWidgetPreviewCard(
+                batteryPercentage = batteryInfo.percentage,
+                temperatureCelsius = batteryInfo.temperatureCelsius,
+                isCharging = batteryInfo.isCharging,
+                isPowerSavingMode = isPowerSavingMode,
+                isHighContrast = isHighContrast,
+                onToggleSaver = { viewModel.togglePowerSavingMode() }
+            )
+        }
+
+        // 0. Flagship 3G Live Futuristic Animated Battery & Saver Widget (4x2)
+        item {
+            WidgetGroupHeader("3G Live Futuristic Battery & Saver (4×2)")
+            Live3GBatteryWidgetCard(
+                batteryPercentage = batteryInfo.percentage,
+                temperatureCelsius = batteryInfo.temperatureCelsius,
+                isCharging = batteryInfo.isCharging,
+                isPowerSavingMode = isPowerSavingMode,
+                isHighContrast = isHighContrast,
+                onToggleSaver = { viewModel.togglePowerSavingMode() },
+                showPinAction = true
+            )
+        }
+
+        // 0B. Secondary Real-Time CPU Usage Monitor Widget (4x2)
+        item {
+            WidgetGroupHeader("Real-Time CPU Usage Monitor (4×2)")
+            LiveCpuWidgetCard(
+                cpuUsagePercent = cpuUsagePercent,
+                cpuAvgMhz = cpuAvgMhz,
+                cpuHistory = cpuHistory,
+                isHighContrast = isHighContrast
+            )
+        }
 
         // 1. Device Overview (4x2)
         item {

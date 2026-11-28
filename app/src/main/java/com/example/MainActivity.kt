@@ -3,6 +3,7 @@ package com.example
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
@@ -131,6 +132,10 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme(darkTheme = isDark, dynamicColor = !isHighContrast) {
                 var currentTab by remember { mutableStateOf(ScreenTab.DASHBOARD) }
 
+                BackHandler(enabled = currentTab != ScreenTab.DASHBOARD) {
+                    currentTab = ScreenTab.DASHBOARD
+                }
+
                 val activeBgColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background
                 val navBarBgColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface
                 val navBarBorderColor = if (isHighContrast) Color.White else Color.Transparent
@@ -205,6 +210,7 @@ class MainActivity : ComponentActivity() {
                             when (tab) {
                                 ScreenTab.DASHBOARD -> DashboardScreen(
                                     viewModel = viewModel,
+                                    onNavigateToLogs = { currentTab = ScreenTab.LOGS },
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 ScreenTab.HARDWARE -> HardwareScreen(

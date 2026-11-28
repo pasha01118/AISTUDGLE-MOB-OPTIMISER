@@ -58,10 +58,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import android.app.TimePickerDialog
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.WbTwilight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.example.viewmodel.OptimiserViewModel
+import com.example.worker.SmartPowerScheduler
 
 @Composable
 fun SettingsScreen(
@@ -73,6 +81,14 @@ fun SettingsScreen(
     val isHighContrast by viewModel.isHighContrast.collectAsState()
     val showSentinelFloatingButton by viewModel.showSentinelFloatingButton.collectAsState()
     val isAutoJunkCleanEnabled by viewModel.isAutoJunkCleanEnabled.collectAsState()
+    val isSmartPowerScheduleEnabled by viewModel.isSmartPowerScheduleEnabled.collectAsState()
+    val sleepStartHour by viewModel.sleepStartHour.collectAsState()
+    val sleepStartMinute by viewModel.sleepStartMinute.collectAsState()
+    val sleepEndHour by viewModel.sleepEndHour.collectAsState()
+    val sleepEndMinute by viewModel.sleepEndMinute.collectAsState()
+    val isInSleepWindow by viewModel.isCurrentlyInSleepWindow.collectAsState()
+    val lastSmartPowerWorkerCheck by viewModel.lastSmartPowerWorkerCheck.collectAsState()
+    val haptic = LocalHapticFeedback.current
     
     // --- Dynamic Multi-provider AI key flows ---
     val activeProvider by viewModel.selectedAiProvider.collectAsState()
@@ -264,6 +280,214 @@ fun SettingsScreen(
                             checkedTrackColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
                         )
                     )
+                }
+            }
+        }
+
+        // --- 1B. SMART POWER SCHEDULING (Sleep Hours Auto Battery Saver) ---
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, activeBorderColor, RoundedCornerShape(12.dp))
+                .testTag("smart_power_scheduling_card"),
+            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            val startLabel = SmartPowerScheduler.formatTime12Hour(sleepStartHour, sleepStartMinute)
+            val endLabel = SmartPowerScheduler.formatTime12Hour(sleepEndHour, sleepEndMinute)
+
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bedtime,
+                            contentDescription = "Smart Power Scheduling",
+                            tint = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "SMART POWER SCHEDULING",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = activeTextColor
+                            )
+                            Text(
+                                text = "Auto-enable Battery Saver during sleep hours based on device clock",
+                                fontSize = 10.sp,
+                                color = activeSubTextColor
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = isSmartPowerScheduleEnabled,
+                        onCheckedChange = { enabled ->
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.toggleSmartPowerSchedule(enabled)
+                            Toast.makeText(
+                                context,
+                                if (enabled) "Smart Power Scheduling active ($startLabel – $endLabel)" else "Smart Power Scheduling paused",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        modifier = Modifier.testTag("smart_power_schedule_switch"),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Sleep Window Time Pickers Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            TimePickerDialog(
+                                context,
+                                { _, h, m ->
+                                    viewModel.updateSleepStartTime(h, m)
+                                    Toast.makeText(
+                                        context,
+                                        "Sleep start set to ${SmartPowerScheduler.formatTime12Hour(h, m)}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                sleepStartHour,
+                                sleepStartMinute,
+                                false
+                            ).show()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp)
+                            .testTag("sleep_start_time_button"),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("SLEEP START", fontSize = 9.sp, color = activeSubTextColor, fontFamily = FontFamily.Monospace)
+                            Text(
+                                text = startLabel,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                color = activeTextColor
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            TimePickerDialog(
+                                context,
+                                { _, h, m ->
+                                    viewModel.updateSleepEndTime(h, m)
+                                    Toast.makeText(
+                                        context,
+                                        "Wake time set to ${SmartPowerScheduler.formatTime12Hour(h, m)}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                sleepEndHour,
+                                sleepEndMinute,
+                                false
+                            ).show()
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(56.dp)
+                            .testTag("sleep_end_time_button"),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("WAKE END", fontSize = 9.sp, color = activeSubTextColor, fontFamily = FontFamily.Monospace)
+                            Text(
+                                text = endLabel,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace,
+                                color = activeTextColor
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Live Device Clock Status Indicator
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = "Clock Window Status",
+                        tint = if (isSmartPowerScheduleEnabled && isInSleepWindow) Color(0xFF00E676) else activeSubTextColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = when {
+                            !isSmartPowerScheduleEnabled -> "Disabled • Toggle switch above to guard overnight battery"
+                            isInSleepWindow -> "ACTIVE NOW • Device clock is in sleep hours ($startLabel – $endLabel)"
+                            else -> "SCHEDULED • Battery Saver activates automatically at $startLabel"
+                        },
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isSmartPowerScheduleEnabled && isInSleepWindow) Color(0xFF00E676) else activeSubTextColor
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = lastSmartPowerWorkerCheck,
+                        fontSize = 9.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = activeSubTextColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.runSmartPowerWorkerNow()
+                            Toast.makeText(context, "Smart Power Worker check executed!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.testTag("smart_power_test_worker_button")
+                    ) {
+                        Text(
+                            text = "RUN WORKER NOW",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
             }
         }

@@ -37,6 +37,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.Hardware7DayTrendsCard
+import com.example.ui.components.HardwareLottieThresholdStrip
+import com.example.ui.components.HardwareMetricType
+import com.example.ui.components.HardwareThresholdLottieIcon
+import com.example.ui.components.PermissionManagerPanel
+import com.example.util.HardwareReportExporter
 import com.example.viewmodel.OptimiserViewModel
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -57,8 +63,8 @@ fun HardwareScreen(
     val isHighContrast by viewModel.isHighContrast.collectAsState()
     val isDark by viewModel.isDarkTheme.collectAsState()
     
-    // Sub-Categories aligned with the screenshots
-    val categories = listOf("Dashboard", "Device", "System", "CPU", "Battery", "Sensors", "Apps", "Tests")
+    // Sub-Categories aligned with the screenshots + 7-Day Trends & Permission Manager
+    val categories = listOf("Dashboard", "7-Day Trends", "Permissions", "Device", "System", "CPU", "Battery", "Sensors", "Apps", "Tests")
     var selectedCategory by remember { mutableStateOf("Dashboard") }
 
     val activeBgColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background
@@ -142,6 +148,8 @@ fun HardwareScreen(
         ) {
             when (selectedCategory) {
                 "Dashboard" -> DashboardView(viewModel = viewModel, onNavigateToTests = { selectedCategory = "Tests" }, isHighContrast = isHighContrast)
+                "7-Day Trends" -> HardwareTrendsTabView(viewModel = viewModel, isHighContrast = isHighContrast)
+                "Permissions" -> PermissionsTabView(viewModel = viewModel, isHighContrast = isHighContrast)
                 "Device" -> DeviceView(isHighContrast = isHighContrast)
                 "System" -> SystemView(isHighContrast = isHighContrast)
                 "CPU" -> CpuView(isHighContrast = isHighContrast)
@@ -217,6 +225,10 @@ fun DashboardView(
     
     val isCpuOverclocked by viewModel.isCpuOverclocked.collectAsState()
     val batteryInfo by viewModel.batteryInfo.collectAsState()
+    val hardware7DayTrends by viewModel.hardware7DayTrends.collectAsState()
+    val isExportingCsv by viewModel.isExportingCsv.collectAsState()
+    val isExportingPdf by viewModel.isExportingPdf.collectAsState()
+    val lastReportExport by viewModel.lastReportExport.collectAsState()
     
     // System simulated metrics
     var coreFreqs by remember(isCpuOverclocked) { 
@@ -253,6 +265,7 @@ fun DashboardView(
             
             cpuHistory = (cpuHistory + cpuPctSim).takeLast(10)
             ramHistory = (ramHistory + ramPct).takeLast(10)
+            viewModel.updateLiveCpuTelemetry(cpuPctSim, cpuAvgFreq.toInt())
         }
     }
 
@@ -324,6 +337,15 @@ fun DashboardView(
             }
         }
 
+        // Lottie-Based Hardware Monitoring Threshold Indicators (CPU, RAM, Temp)
+        val liveCpuPercent = cpuHistory.lastOrNull() ?: 42f
+        HardwareLottieThresholdStrip(
+            cpuPercent = liveCpuPercent,
+            ramPercent = ramPct,
+            temperatureCelsius = batteryInfo.temperatureCelsius,
+            isHighContrast = isHighContrast
+        )
+
         // Gauges & Storage Display
         Card(
             modifier = Modifier
@@ -360,7 +382,16 @@ fun DashboardView(
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("RAM Gauge", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    HardwareThresholdLottieIcon(
+                                        metricType = HardwareMetricType.RAM,
+                                        isThresholdExceeded = ramPct >= 75f,
+                                        isHighContrast = isHighContrast,
+                                        size = 26.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("RAM Gauge", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textPrimary)
+                                }
                                 Text("7.25 GB Total System", fontSize = 10.sp, color = Color.LightGray)
                                 Text("${(7423 * ramPct / 100).toInt()} MB Used | ${(7423 * (1 - ramPct/100)).toInt()} MB Free", fontSize = 10.sp, color = textAccent)
                             }
@@ -377,17 +408,17 @@ fun DashboardView(
                 Divider(color = Color.White.copy(alpha = 0.1f))
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // CPU Mediatek Dimensity Widget (Matches Page 1)
+                // CPU Mediatek Dimensity Widget with Lottie Alert Icon
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Memory,
-                        contentDescription = "CPU Icon",
-                        tint = textAccent,
-                        modifier = Modifier.size(18.dp)
+                    HardwareThresholdLottieIcon(
+                        metricType = HardwareMetricType.CPU,
+                        isThresholdExceeded = liveCpuPercent >= 75f,
+                        isHighContrast = isHighContrast,
+                        size = 28.dp
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Mediatek Dimensity 7300",
+                        text = "Mediatek Dimensity 7300 (${liveCpuPercent.toInt()}% Load)",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = textPrimary
@@ -474,7 +505,34 @@ fun DashboardView(
             isHighContrast = isHighContrast
         )
 
-        // DOWNLOADABLE JSON DIAGNOSTIC DATA EXPORTER BUTTON
+        // 7-Day Hardware Performance Trends & Bottleneck Analytics
+        val dashboardContext = LocalContext.current
+        Hardware7DayTrendsCard(
+            trends = hardware7DayTrends,
+            isHighContrast = isHighContrast,
+            isExportingCsv = isExportingCsv,
+            isExportingPdf = isExportingPdf,
+            onExportCsv = {
+                viewModel.exportHardwareReportCsv(dashboardContext) { res ->
+                    if (res != null) {
+                        Toast.makeText(dashboardContext, "CSV report saved: ${res.publicDisplayPath}", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(dashboardContext, "CSV export failed.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onExportPdf = {
+                viewModel.exportHardwareReportPdf(dashboardContext) { res ->
+                    if (res != null) {
+                        Toast.makeText(dashboardContext, "PDF report saved: ${res.publicDisplayPath}", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(dashboardContext, "PDF export failed.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        )
+
+        // DOWNLOADABLE DIAGNOSTIC DATA EXPORTER (CSV, PDF & JSON)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -505,7 +563,7 @@ fun DashboardView(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "DIAGNOSTIC DATA PORTABILITY",
+                        text = "HARDWARE REPORTS & DATA PORTABILITY",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = if (isHighContrast) Color.White else Color(0xFF00E676),
@@ -514,11 +572,77 @@ fun DashboardView(
                 }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Generate and save local JSON dump containing active CPU temperatures, simulated memory usage bounds, storage segments, and full optimization clean history.",
+                    text = "Export hardware performance logs, 7-day bottleneck trends, and battery health diagnostics as CSV, PDF, or JSON reports for record-keeping.",
                     fontSize = 11.sp,
                     color = if (isHighContrast) Color.White else Color.LightGray
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.exportHardwareReportCsv(context) { res ->
+                                if (res != null) {
+                                    Toast.makeText(context, "CSV saved to ${res.publicDisplayPath}", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "CSV export failed.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        enabled = !isExportingCsv && !isExportingPdf,
+                        border = BorderStroke(1.dp, if (isHighContrast) Color.White else Color(0xFF00E676)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("hardware_export_csv_button"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        if (isExportingCsv) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF00E676), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.TableChart, contentDescription = "Export CSV", tint = if (isHighContrast) Color.White else Color(0xFF00E676), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("EXPORT CSV", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = if (isHighContrast) Color.White else Color(0xFF00E676))
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.exportHardwareReportPdf(context) { res ->
+                                if (res != null) {
+                                    Toast.makeText(context, "PDF saved to ${res.publicDisplayPath}", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "PDF export failed.", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        enabled = !isExportingCsv && !isExportingPdf,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isHighContrast) Color.White else Color(0xFFE53935),
+                            contentColor = if (isHighContrast) Color.Black else Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("hardware_export_pdf_button"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        if (isExportingPdf) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = "Export PDF", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("EXPORT PDF", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
                 
                 Button(
                     onClick = {
@@ -542,7 +666,7 @@ fun DashboardView(
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(38.dp)
+                        .height(48.dp)
                         .testTag("hardware_export_download_json_button"),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
                 ) {
@@ -552,6 +676,64 @@ fun DashboardView(
                         Icon(imageVector = Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("GENERATE & DOWNLOAD JSON REPORT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // CSV / PDF Report Export Confirmation & Share Card
+                lastReportExport?.let { report ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, Color(0xFF00E676).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .testTag("hardware_report_confirmation_card"),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF131F17)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "✓ ${report.format} Hardware Report Ready (${(report.byteSize / 1024).coerceAtLeast(1)} KB)",
+                                color = Color(0xFF00E676),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Saved: ${report.publicDisplayPath}",
+                                color = Color.White,
+                                fontSize = 10.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                if (report.format == "CSV") {
+                                    TextButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("HARDWARE_CSV_REPORT", report.textPreview)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "CSV report copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Text("COPY CSV", color = Color(0xFF00E676), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                TextButton(
+                                    onClick = {
+                                        val mime = if (report.format == "PDF") "application/pdf" else "text/csv"
+                                        val shared = HardwareReportExporter.shareExportedFile(context, report.file, mime)
+                                        if (!shared) {
+                                            Toast.makeText(context, "Report saved at ${report.publicDisplayPath}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("share_hardware_report_button")
+                                ) {
+                                    Text("SHARE / OPEN", color = Color(0xFF40C4FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                                TextButton(onClick = { viewModel.dismissReportExportBanner() }) {
+                                    Text("CLOSE", color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
                 
@@ -567,7 +749,7 @@ fun DashboardView(
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text("✓ Diagnostic File Saved!", color = Color.Green, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("Path: $exportFilePath \n\nThis file is structured for offline Recharts / Jupyter notebook imports.", color = Color.White, fontSize = 10.sp)
+                            Text("Path: $exportFilePath \n\nThis file is structured for offline analytics & notebook imports.", color = Color.White, fontSize = 10.sp)
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                                 TextButton(
@@ -2019,13 +2201,24 @@ fun RealtimeHardwareChartCard(
                     }
                 }
 
-                CircularProgressThermalIndicator(
-                    temperature = temperatureCelsius,
-                    isHighContrast = isHighContrast,
+                Column(
                     modifier = Modifier
                         .weight(1.0f)
-                        .padding(start = 12.dp)
-                )
+                        .padding(start = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    HardwareThresholdLottieIcon(
+                        metricType = HardwareMetricType.TEMP,
+                        isThresholdExceeded = temperatureCelsius >= 38.0f,
+                        isHighContrast = isHighContrast,
+                        size = 34.dp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    CircularProgressThermalIndicator(
+                        temperature = temperatureCelsius,
+                        isHighContrast = isHighContrast
+                    )
+                }
             }
         }
     }
